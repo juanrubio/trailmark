@@ -1,0 +1,5 @@
+/trailmark
+/bin/
+/dist/
+*.test
+coverage.out
