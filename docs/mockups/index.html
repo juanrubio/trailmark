@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Trailmark — interactive TUI concept</title>
+  <style>
+    :root { color-scheme: dark; --page:#101314; --panel:#191e20; --raised:#202729; --line:#364144; --text:#e5e9e4; --muted:#a2aeae; --accent:#ade6c2; --selected:#253c32; --path:#b2d3dc; --gold:#ddc38c; --shade:rgba(8,12,12,.78); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; background:var(--page); color:var(--text); font:14px/1.6 "DejaVu Sans Mono","SFMono-Regular",Consolas,monospace; }
+    body.light { color-scheme:light; --page:#eceee8; --panel:#fafbf7; --raised:#eef1e9; --line:#c1c9bf; --text:#24342d; --muted:#59685e; --accent:#246941; --selected:#dfeddf; --path:#315e70; --gold:#795b20; --shade:rgba(36,52,45,.45); }
+    button,input { font:inherit; }
+    button { color:inherit; cursor:pointer; border:0; background:none; }
+    button:focus-visible,input:focus-visible,a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    button:hover { color:var(--accent); }
+    button[aria-disabled="true"] { color:var(--muted); cursor:help; }
+    a { color:var(--accent); }
+    .workspace { max-width:1440px; margin:auto; padding:28px 42px 24px; }
+    .concept-head { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:18px; }
+    .eyebrow { color:var(--accent); font-size:11px; letter-spacing:.16em; text-transform:uppercase; }
+    .concept-head p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    .page-controls { display:flex; gap:16px; font-size:12px; white-space:nowrap; }
+    .scenes { display:flex; gap:8px 22px; flex-wrap:wrap; margin-bottom:18px; border-bottom:1px solid var(--line); }
+    .scene { padding:10px 0 12px; color:var(--muted); border-bottom:2px solid transparent; font-size:12px; }
+    .scene[aria-current="page"] { color:var(--text); border-color:var(--accent); }
+    .scene .number { color:var(--accent); margin-right:7px; }
+    .terminal { background:var(--panel); border:1px solid var(--line); height:760px; max-height:calc(100vh - 218px); min-height:560px; display:flex; flex-direction:column; position:relative; box-shadow:0 22px 65px #0002; }
+    .terminal.narrow { max-width:780px; margin:auto; }
+    .titlebar { padding:9px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--muted); background:var(--raised); }
+    .toolbar { display:flex; align-items:center; gap:14px; padding:17px 20px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+    .brand { font-weight:700; font-size:18px; letter-spacing:-.06em; margin-right:14px; }
+    .brand span { color:var(--accent); margin-right:7px; }
+    .scope { color:var(--muted); padding:3px 0; font-size:12px; }
+    .scope b { font-weight:400; color:var(--text); }
+    .scope .key { color:var(--accent); margin-right:5px; }
+    .local { margin-left:auto; color:var(--muted); font-size:11px; white-space:nowrap; }
+    .local span { color:var(--accent); }
+    .filterbar { border-bottom:1px solid var(--line); padding:10px 20px; display:flex; gap:12px; align-items:center; }
+    .filterbar label { color:var(--accent); font-size:12px; }
+    input { min-width:0; background:var(--page); color:var(--text); border:1px solid var(--line); padding:7px 10px; border-radius:0; }
+    .filterbar input { flex:1; }
+    .content { flex:1; min-height:0; display:grid; grid-template-columns:44% 56%; overflow:hidden; }
+    .list-pane { min-width:0; min-height:0; display:flex; flex-direction:column; border-right:1px solid var(--line); }
+    .pane-heading { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:10px; letter-spacing:.13em; text-transform:uppercase; padding:15px 20px 10px; }
+    .pane-heading .count { letter-spacing:0; text-transform:none; }
+    .sessions { overflow:auto; flex:1; min-height:0; padding:0 10px 10px; scrollbar-color:var(--line) transparent; scrollbar-width:thin; }
+    .day { font-size:11px; color:var(--muted); margin:15px 10px 7px; display:flex; align-items:center; gap:12px; }
+    .day:after { content:""; height:1px; background:var(--line); flex:1; opacity:.65; }
+    .session { display:block; width:100%; text-align:left; padding:11px 13px 11px 16px; border-left:2px solid transparent; margin-bottom:3px; }
+    .session:hover { background:var(--raised); color:var(--text); }
+    .session.selected { background:var(--selected); border-left-color:var(--accent); color:var(--text); }
+    .session-title { display:block; font-weight:700; font-size:13px; line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .session-path { display:block; color:var(--path); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:4px 0 3px; }
+    .session-meta { display:flex; justify-content:space-between; color:var(--muted); font-size:10px; gap:10px; }
+    .selected .session-meta .provider { color:var(--accent); }
+    .older-link { border-top:1px solid var(--line); padding:12px 20px; font-size:11px; text-align:left; color:var(--muted); }
+    .older-link strong { color:var(--accent); font-weight:400; }
+    .overview { display:flex; flex-direction:column; overflow:auto; min-width:0; min-height:0; scrollbar-color:var(--line) transparent; scrollbar-width:thin; }
+    .overview-body { padding:5px 28px 24px; }
+    .overview h1 { font-size:22px; line-height:1.4; letter-spacing:-.05em; margin:8px 0 8px; font-weight:600; }
+    .overview .subline { color:var(--muted); font-size:11px; margin-bottom:23px; }
+    .origin { display:inline-block; padding:1px 5px; border:1px solid var(--line); font-size:10px; margin-right:8px; color:var(--muted); }
+    .section-label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.12em; margin-bottom:7px; }
+    .directory { border-left:2px solid var(--line); padding-left:12px; margin:0 0 23px; }
+    .directory code { color:var(--path); font:inherit; font-size:13px; overflow-wrap:anywhere; }
+    .directory small { display:block; color:var(--muted); font-size:10px; margin-top:3px; }
+    .excerpt { font-size:12px; line-height:1.8; margin:0 0 22px; }
+    .excerpt p { margin:0; }
+    .excerpt .text-link { color:var(--accent); font-size:10px; padding:5px 0 0; }
+    .outcome-label { color:var(--gold); font-size:10px; text-transform:none; letter-spacing:0; float:right; }
+    .continuation { border-top:1px solid var(--line); margin-top:auto; padding:17px 28px 20px; }
+    .action-row { display:flex; flex-wrap:wrap; gap:9px; margin-top:10px; }
+    .action { border:1px solid var(--line); padding:8px 11px; font-size:11px; }
+    .action.primary { border-color:var(--accent); color:var(--accent); background:var(--selected); }
+    kbd { color:var(--accent); font:inherit; margin-right:5px; }
+    .micro { margin:10px 0 0; font-size:10px; color:var(--muted); line-height:1.7; }
+    .footer { border-top:1px solid var(--line); padding:10px 18px; display:flex; gap:7px 18px; flex-wrap:wrap; font-size:10px; color:var(--muted); }
+    .footer button { padding:0; }
+    .page-note { display:flex; justify-content:space-between; gap:20px; margin-top:17px; color:var(--muted); font-size:11px; }
+    .page-note p { margin:0; }
+    .page-note b { color:var(--text); font-weight:400; }
+    .empty { padding:35px 20px; color:var(--muted); font-size:12px; }
+    .empty strong { display:block; color:var(--text); margin-bottom:8px; }
+    .empty button { color:var(--accent); border-bottom:1px solid; padding:0; margin-top:12px; }
+    .back { font-size:11px; color:var(--accent); }
+    .transcript { flex:1; min-height:0; display:flex; flex-direction:column; }
+    .transcript-title { border-bottom:1px solid var(--line); padding:14px 25px; display:flex; gap:20px; align-items:center; }
+    .transcript-title h2 { margin:0; font-size:14px; }
+    .transcript-title p { color:var(--path); font-size:11px; margin:3px 0 0; }
+    .transcript-title .count { margin-left:auto; font-size:11px; color:var(--muted); }
+    .messages { overflow:auto; flex:1; padding:10px 38px 30px; scrollbar-color:var(--line) transparent; }
+    .message { max-width:880px; border-bottom:1px solid var(--line); padding:22px 0; }
+    .message .role { font-size:11px; color:var(--accent); margin-bottom:10px; }
+    .message .role time { color:var(--muted); margin-left:16px; }
+    .message p { font-size:13px; line-height:1.9; margin:0; white-space:pre-wrap; }
+    .message details { color:var(--muted); font-size:11px; margin-top:12px; }
+    .message summary { cursor:pointer; }
+    .message pre { white-space:pre-wrap; }
+    mark { background:#ddc38c; color:#20291f; padding:0 2px; }
+    mark.active { outline:2px solid var(--accent); outline-offset:2px; }
+    .match-controls { display:flex; gap:8px; align-items:center; white-space:nowrap; color:var(--muted); font-size:11px; }
+    .match-controls button { border:1px solid var(--line); padding:3px 8px; }
+    dialog { color:var(--text); background:var(--panel); border:1px solid var(--accent); padding:0; width:min(590px,calc(100vw - 36px)); max-height:85vh; box-shadow:0 24px 100px #0006; }
+    dialog::backdrop { background:var(--shade); }
+    .dialog-header { padding:17px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
+    .dialog-header h2 { margin:0; font-size:14px; }
+    .dialog-body { padding:19px 22px 24px; }
+    .dialog-body > p { color:var(--muted); font-size:12px; margin-top:0; }
+    .option { display:flex; width:100%; gap:14px; align-items:center; text-align:left; padding:12px; margin:3px 0; border:1px solid transparent; }
+    .option:hover,.option.chosen { background:var(--selected); color:var(--text); border-color:var(--line); }
+    .option .option-check { color:var(--accent); min-width:14px; }
+    .option strong { display:block; font-size:13px; font-weight:400; }
+    .option small { display:block; color:var(--muted); font-size:10px; margin-top:2px; }
+    .option .count { margin-left:auto; color:var(--muted); font-size:11px; }
+    .dialog-foot { border-top:1px solid var(--line); padding:12px 22px; color:var(--muted); font-size:10px; }
+    .decision-tabs { display:flex; border-bottom:1px solid var(--line); margin-bottom:20px; }
+    .decision-tabs button { flex:1; padding:10px 0; font-size:12px; border-bottom:2px solid transparent; }
+    .decision-tabs button.chosen { border-color:var(--accent); color:var(--accent); }
+    .decision-copy { font-size:14px !important; color:var(--text) !important; line-height:1.8; }
+    .field { margin:16px 0; }
+    .field code { display:block; color:var(--path); overflow-wrap:anywhere; font:inherit; font-size:12px; }
+    .command-placeholder { padding:14px; border:1px dashed var(--line); color:var(--muted); font-size:12px; }
+    .command-placeholder strong { color:var(--gold); display:block; font-size:11px; margin-bottom:6px; }
+    .status-message { position:absolute; bottom:54px; left:50%; transform:translateX(-50%); padding:9px 15px; background:var(--raised); border:1px solid var(--accent); font-size:11px; max-width:90%; z-index:2; }
+    .help-grid { display:grid; grid-template-columns:auto 1fr; gap:8px 20px; font-size:12px; }
+    .help-grid dt { color:var(--accent); }
+    .help-grid dd { margin:0; color:var(--muted); }
+    .result { width:100%; display:block; text-align:left; padding:17px 24px; border-bottom:1px solid var(--line); }
+    .result strong { font-size:13px; }
+    .result p { color:var(--muted); margin:7px 0 0; font-size:12px; }
+    .result small { display:block; color:var(--path); font-size:11px; }
+    .terminal.narrow .content { display:block; }
+    .terminal.narrow .list-pane { height:100%; border:0; }
+    .terminal.narrow .overview { display:none; height:100%; }
+    .terminal.narrow.overview-open .list-pane { display:none; }
+    .terminal.narrow.overview-open .overview { display:flex; }
+    .terminal.narrow .local { display:none; }
+    @media (max-width:1100px) {
+      .workspace { padding:18px 20px; }
+      .content { display:block; }
+      .list-pane { height:100%; border:0; }
+      .overview { display:none; height:100%; }
+      .overview-open .list-pane { display:none; }
+      .overview-open .overview { display:flex; }
+      .local { display:none; }
+      .terminal { max-height:none; height:720px; }
+    }
+    @media (max-width:600px) {
+      .workspace { padding:14px 10px; }
+      .concept-head { align-items:flex-start; }
+      .page-controls { flex-direction:column; gap:5px; }
+      .scenes { gap:6px 13px; }
+      .scene { font-size:10px; }
+      .toolbar { gap:8px 12px; padding:12px; }
+      .brand { width:100%; margin:0; }
+      .terminal { height:740px; }
+      .overview-body { padding:8px 18px 18px; }
+      .overview h1 { font-size:20px; }
+      .continuation { padding:14px 18px; }
+      .messages { padding:0 20px; }
+      .filterbar { flex-wrap:wrap; padding:10px 14px; }
+      .filterbar input { flex-basis:60%; }
+      .page-note { flex-direction:column; gap:5px; }
+      .titlebar span:last-child { display:none; }
+    }
+  </style>
+</head>
+<body>
+<main class="workspace">
+  <header class="concept-head">
+    <div><div class="eyebrow">Trailmark / interaction study 01</div><p>Pick up where your thinking left off.</p></div>
+    <div class="page-controls"><button id="sizeToggle" aria-pressed="false">[ Wide / narrow ]</button><button id="themeToggle" aria-pressed="false">[ Light theme ]</button></div>
+  </header>
+  <nav class="scenes" aria-label="Concept screens">
+    <button class="scene" data-scene="recent" aria-current="page"><span class="number">01</span>Recent work</button>
+    <button class="scene" data-scene="older"><span class="number">02</span>Older sessions</button>
+    <button class="scene" data-scene="continue"><span class="number">03</span>Continue work</button>
+    <button class="scene" data-scene="transcript"><span class="number">04</span>Read & search</button>
+  </nav>
+  <section class="terminal" id="terminal" aria-label="Trailmark terminal concept">
+    <div class="titlebar"><span>trailmark — recent session history</span><span>local concept · fictional data · 14 Oct 2026</span></div>
+    <header class="toolbar">
+      <div class="brand"><span>┤</span>trailmark</div>
+      <button class="scope" id="timeButton"><span class="key">w</span><b id="timeLabel">Last 7 days</b> ▾</button>
+      <button class="scope" id="projectButton"><span class="key">p</span><b id="projectLabel">All projects</b> ▾</button>
+      <button class="scope" id="harnessButton" aria-label="Filter by harness" aria-haspopup="dialog"><span class="key">h</span><b id="harnessLabel">All harnesses</b> ▾</button>
+      <div class="local"><span>●</span> on device</div>
+    </header>
+    <div class="filterbar" id="metadataBar" hidden><label for="metadataQuery">Filter sessions /</label><input id="metadataQuery" autocomplete="off" placeholder="Purpose, project, or path"><button id="clearFilter">Clear</button></div>
+    <div class="content" id="homeView">
+      <section class="list-pane" aria-label="Recent sessions"><div class="pane-heading"><span id="listHeading">Recent sessions</span><span class="count" id="sessionCount"></span></div><div class="sessions" id="sessionList"></div><button class="older-link" id="olderButton"></button></section>
+      <section class="overview" id="overview" aria-label="Selected session overview" tabindex="-1"></section>
+    </div>
+    <section class="transcript" id="transcriptView" aria-label="Session transcript" hidden>
+      <div class="transcript-title"><button class="back" id="transcriptBack">← Overview</button><div><h2 id="transcriptTitle"></h2><p id="transcriptPath"></p></div><span class="count">TRANSCRIPT</span></div>
+      <div class="filterbar"><label for="transcriptQuery">Find /</label><input id="transcriptQuery" autocomplete="off" placeholder="Search this session"><div class="match-controls"><span id="matchCount" aria-live="polite">Type to find</span><button id="previousMatch" aria-label="Previous match">[</button><button id="nextMatch" aria-label="Next match">]</button></div></div>
+      <div class="messages" id="messages"></div>
+    </section>
+    <section class="transcript" id="searchView" aria-label="Search session content" hidden>
+      <div class="transcript-title"><button class="back" id="searchBack">← Overview</button><div><h2>Search session content</h2><p>Uses the time, project, and harness scope above</p></div></div>
+      <div class="filterbar"><label for="contentQuery">Search /</label><input id="contentQuery" autocomplete="off" placeholder="A phrase, filename, or decision"></div>
+      <div class="messages" id="contentResults"></div>
+    </section>
+    <footer class="footer" id="footer"></footer>
+    <div class="status-message" id="toast" role="status" hidden></div>
+  </section>
+  <div class="page-note"><p><b id="sceneNote">Recognize the work first.</b> <span id="sceneDescription">Purpose and directory stay visible as you move through your week.</span></p><p>Interactive mockup · no real logs or agent actions</p></div>
+</main>
+<dialog id="dialog" aria-labelledby="dialogTitle"><div class="dialog-header"><h2 id="dialogTitle"></h2><button id="closeDialog" aria-label="Close dialog">Esc ×</button></div><div class="dialog-body" id="dialogBody"></div><div class="dialog-foot" id="dialogFoot">↑ ↓ Choose · Enter Select · Esc Back</div></dialog>
+<script>
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const esc = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sessions = [
+    {id:'tm-01',title:'Make recent sessions easy to recognize',project:'trailmark',path:'~/repos/trailmark',agent:'Codex',days:0,time:'10:42',age:'20 min ago',date:'Today',origin:'Native title',fork:true,request:'I want to see what I worked on over the last few days. Make the session purpose and project directory easy to recognize, so I can decide how to continue.',latest:'The recent-work overview now leads with purpose and directory. Transcript search stays available as a secondary view. The next step is to review the screen concepts.',topic:'recent-work overview'},
+    {id:'ml-01',title:'Repair the lesson deployment flow',project:'music-lab',path:'~/repos/music-lab',agent:'Claude Code',days:0,time:'08:50',age:'2 hours ago',date:'Today',origin:'Native title',fork:false,request:'Review why the newest lesson assets are missing after deployment. Keep learner progress intact and check the staging flow.',latest:'The asset-copy step was missing the lesson bundle. The proposed fix is ready for review; deployment has not been performed.',topic:'lesson assets'},
+    {id:'db-01',title:'Investigate refresh failures',project:'dashboard',path:'~/worktrees/dashboard-refresh',agent:'Codex',days:1,time:'17:30',age:'Yesterday · 17:30',date:'Yesterday',origin:'Native title',fork:true,request:'Investigate intermittent refresh failures in this worktree. Check how the interface represents a provider that only returns partial data.',latest:'The refresh handler conflates missing provider data with a total failure. A partial-result state is proposed and still needs implementation.',topic:'partial-result state'},
+    {id:'db-02',title:'Simplify the dashboard navigation',project:'dashboard',path:'~/repos/dashboard',agent:'Claude Code',days:1,time:'11:10',age:'Yesterday · 11:10',date:'Yesterday',origin:'Request excerpt',fork:true,request:'Simplify the dashboard navigation so the most-used sections are easier to reach. Preserve the current page layout.',latest:'The main navigation has been reduced to three groups. The interaction notes are ready; the layout implementation is still pending.',topic:'main navigation'},
+    {id:'in-01',title:'Review the server migration plan',project:'infra',path:'~/repos/infra',agent:'Claude Code',days:2,time:'09:15',age:'Mon · 09:15',date:'Mon 12 Oct',origin:'Native title',fork:false,request:'Review the server migration plan and identify any missing recovery steps. Keep the proposed changes in the planning document.',latest:'Added a service inventory and recovery sequence to the plan. The migration itself has not started.',topic:'recovery sequence'},
+    {id:'tm-02',title:'Define the native log adapters',project:'trailmark',path:'~/repos/trailmark',agent:'Codex',days:4,time:'16:20',age:'Sat · 16:20',date:'Sat 10 Oct',origin:'Native title',fork:true,request:'Define a common session model for the two initial adapters. Preserve source identity and the original working directory.',latest:'The draft model separates original cwd, project identity, and source store. Representative parser fixtures are the next task.',topic:'common session model'},
+    {id:'cl-01',title:'Improve empty states in the notes app',project:'notes',path:'~/repos/notes',agent:'Claude Code',days:6,time:'14:05',age:'Thu · 14:05',date:'Thu 08 Oct',origin:'Native title',fork:true,request:'Help users understand what to do when a notebook has no notes. Keep the empty state concise.',latest:'Two empty-state variants are ready for comparison. No changes have been made to the storage model.',topic:'empty-state variants'},
+    {id:'in-02',title:'Document the backup recovery procedure',project:'infra',path:'~/repos/infra',agent:'Codex',days:11,time:'15:40',age:'03 Oct · 15:40',date:'Sat 03 Oct · 11 days ago',origin:'Native title',fork:true,request:'Write a recovery procedure for the current backup layout, including how to identify the correct snapshot before restoring.',latest:'The recovery checklist includes snapshot selection and a staged restore. A rehearsal is still outstanding.',topic:'recovery checklist'},
+    {id:'ml-02',title:'Sketch the lesson progress view',project:'music-lab',path:'~/repos/music-lab',agent:'Claude Code',days:18,time:'10:25',age:'26 Sep · 10:25',date:'Sat 26 Sep · 18 days ago',origin:'Native title',fork:false,request:'Sketch a progress view that makes the next lesson obvious while showing recently completed activities.',latest:'The proposed view separates current, next, and completed activities. The next discussion is about how to represent optional practice.',topic:'lesson progress'},
+    {id:'tm-03',title:'Explore a local session browser',project:'trailmark',path:'~/repos/trailmark',agent:'Codex',days:38,time:'18:10',age:'06 Sep · 18:10',date:'Sun 06 Sep · 38 days ago',origin:'Request excerpt',fork:true,request:'Explore a small local terminal tool that helps me remember coding-agent sessions across different projects.',latest:'The initial concept is a recent-work list with project context and a session overview. The intended interface is a keyboard-driven TUI.',topic:'local session browser'}
+  ];
+  const ranges = [{value:1,label:'Today',detail:'14 October 2026'}, {value:3,label:'Last 3 days',detail:'12–14 October 2026'}, {value:7,label:'Last 7 days',detail:'8–14 October 2026 · default'}, {value:30,label:'Last 30 days',detail:'15 September–14 October 2026'}, {value:Infinity,label:'All time',detail:'Every indexed session, including older work'}];
+  const state = {range:7,project:'all',agent:'all',selected:'tm-01',view:'home',filter:'',scene:'recent',match:0,narrow:false,previousView:'home'};
+  let toastTimer;
+  const selected = () => sessions.find(s=>s.id===state.selected);
+  const withinScope = s => (state.range===Infinity || s.days<state.range) && (state.project==='all'||s.project===state.project) && (state.agent==='all'||s.agent===state.agent);
+  const visible = () => sessions.filter(s=>withinScope(s) && `${s.title} ${s.project} ${s.path} ${s.agent}`.toLowerCase().includes(state.filter.toLowerCase()));
+  const fullPath = s => s.path.replace('~','/home/dev');
+  const rangeLabel = () => ranges.find(r=>r.value===state.range).label;
+  const countLabel = count => `${count} ${count===1?'session':'sessions'}`;
+  function announce(text) { $('toast').textContent=text; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,3500); }
+  function footer(items) { $('footer').innerHTML=items.map(([key,label,action])=>`<button data-footer="${action}"><kbd>${esc(key)}</kbd>${esc(label)}</button>`).join(''); }
+  function renderHome() {
+    const rows=visible();
+    if(!rows.some(s=>s.id===state.selected)) state.selected=rows[0]?.id || null;
+    $('sessionCount').textContent=countLabel(rows.length);
+    $('listHeading').textContent=state.range===Infinity?'All sessions':'Recent sessions';
+    let previous='';
+    $('sessionList').innerHTML=rows.map(s=>{ const day=s.date!==previous?`<div class="day">${esc(s.date)}</div>`:''; previous=s.date; return `${day}<button class="session ${s.id===state.selected?'selected':''}" data-session="${s.id}" aria-current="${s.id===state.selected?'true':'false'}"><span class="session-title">${esc(s.title)}</span><span class="session-path">${esc(s.path)}</span><span class="session-meta"><span class="provider">${esc(s.agent)}${s.origin==='Request excerpt'?' · request excerpt':''}</span><span>${esc(s.age)}</span></span></button>`; }).join('') || `<div class="empty"><strong>No sessions in this view</strong>Adjust the harness, project, time window, or text filter.<br><button data-reset="true">Show all sessions</button></div>`;
+    const older=sessions.filter(s=>!withinScope(s) && (state.project==='all'||s.project===state.project) && (state.agent==='all'||s.agent===state.agent) && s.days>=state.range).length;
+    $('olderButton').innerHTML=state.range===Infinity?'Showing all indexed history · <strong>w Change time window</strong>':`${older} older sessions outside this window · <strong>Show all time →</strong>`;
+    renderOverview();
+  }
+  function renderOverview() {
+    const s=selected();
+    if(!s) { $('overview').innerHTML='<div class="empty">Select a session to see its purpose and directory.</div>'; return; }
+    $('overview').innerHTML=`<div class="pane-heading"><span>Session overview</span><button class="back" data-action="list">← List</button></div><div class="overview-body"><h1>${esc(s.title)}</h1><div class="subline"><span class="origin">${esc(s.origin)}</span>${esc(s.agent)} · ${esc(s.date.split(' · ')[0])} ${esc(s.time)}</div><div class="directory"><div class="section-label">Working directory</div><code>${esc(fullPath(s))}</code><small>${s.path.includes('worktrees')?'Worktree · '+esc(s.project):'Project · '+esc(s.project)}</small></div><div class="excerpt"><div class="section-label">Initial request</div><p>${esc(s.request)}</p><button class="text-link" data-action="transcript">Open source passage →</button></div><div class="excerpt"><div class="section-label">Where you left off <span class="outcome-label">Agent reported</span></div><p>${esc(s.latest)}</p></div></div><div class="continuation"><div class="section-label">Continue with this work</div><div class="action-row"><button class="action primary" data-action="resume"><kbd>r</kbd>Resume</button><button class="action" data-action="fork" ${s.fork?'':'aria-disabled="true"'}><kbd>f</kbd>Fork${s.fork?'':' — unavailable'}</button><button class="action" data-action="clean"><kbd>n</kbd>Clean session</button></div><p class="micro">Review the history and target directory before continuing.</p></div>`;
+  }
+  function render() {
+    $('timeLabel').textContent=rangeLabel(); $('projectLabel').textContent=state.project==='all'?'All projects':state.project; $('harnessLabel').textContent=state.agent==='all'?'All harnesses':`Harness: ${state.agent}`;
+    $('homeView').hidden=state.view!=='home'; $('transcriptView').hidden=state.view!=='transcript'; $('searchView').hidden=state.view!=='search';
+    if(state.view==='home') { renderHome(); footer([['↑↓ / jk','Select','move'],['Enter','Overview','overview'],['p','Project','project'],['w','When','time'],['h','Harness','harness'],['/','Filter','filter'],['t','Transcript','transcript'],['s','Search content','search'],['?','Help','help']]); }
+    if(state.view==='transcript') { renderTranscript(); footer([['Esc','Overview','back'],['/','Find','find'],['[ / ]','Previous / next match','next'],['c','Copy exchange','copy'],['?','Help','help']]); }
+    if(state.view==='search') { renderContentResults(); footer([['Esc','Overview','back'],['w','Time scope','time'],['p','Project scope','project'],['h','Harness scope','harness'],['?','Help','help']]); }
+    $('metadataBar').hidden=state.view!=='home' || !($('metadataQuery').dataset.open==='true');
+    document.querySelectorAll('.scene').forEach(b=>{if(b.dataset.scene===state.scene)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
+  }
+  function chooseSession(id) { state.selected=id; renderHome(); }
+  function moveSession(step) { const rows=visible(), index=rows.findIndex(s=>s.id===state.selected); if(!rows.length)return; chooseSession(rows[(index+step+rows.length)%rows.length].id); document.querySelector('.session.selected')?.scrollIntoView({block:'nearest'}); }
+  function overview() { if(!selected())return; $('terminal').classList.add('overview-open'); $('overview').focus(); }
+  function dialog(title,body,foot='↑ ↓ Choose · Enter Select · Esc Back') { $('dialogTitle').textContent=title; $('dialogBody').innerHTML=body; $('dialogFoot').textContent=foot; if(!$('dialog').open)$('dialog').showModal(); requestAnimationFrame(()=>($('dialogBody').querySelector('.chosen')||$('dialogBody').querySelector('button,input')||$('closeDialog')).focus()); }
+  function showTime() {
+    dialog('How far back?',`<p>Seven days is the starting view. Your older sessions stay available.</p>${ranges.map(r=>`<button class="option ${state.range===r.value?'chosen':''}" data-range="${r.value}"><span class="option-check">${state.range===r.value?'›':' '}</span><span><strong>${r.label}</strong><small>${r.detail}</small></span><span class="count">${sessions.filter(s=>(r.value===Infinity||s.days<r.value)&&(state.project==='all'||s.project===state.project)&&(state.agent==='all'||s.agent===state.agent)).length} sessions</span></button>`).join('')}`,'Changes the visible window only. It does not delete or archive sessions.');
+  }
+  function showProjects() { const projects=['all',...new Set(sessions.map(s=>s.project))]; dialog('Choose a project',projects.map(p=>`<button class="option ${p===state.project?'chosen':''}" data-project="${p}"><span class="option-check">${p===state.project?'›':' '}</span><span><strong>${p==='all'?'All projects':esc(p)}</strong><small>${p==='trailmark'?'Current project in this concept':p==='all'?'Across all indexed directories':'Keep individual working directories visible'}</small></span></button>`).join('')); }
+  function showHarnesses() {
+    const harnesses=['all',...new Set(sessions.map(s=>s.agent))];
+    dialog('Filter by harness',`<p>Choose the coding tool that created the session. Your time and project filters stay in place.</p>${harnesses.map(h=>{
+      const count=sessions.filter(s=>(state.range===Infinity||s.days<state.range)&&(state.project==='all'||s.project===state.project)&&(h==='all'||s.agent===h)).length;
+      return `<button class="option ${h===state.agent?'chosen':''}" data-harness="${esc(h)}"><span class="option-check">${h===state.agent?'›':' '}</span><span><strong>${h==='all'?'All harnesses':esc(h)}</strong><small>${h==='all'?'Show sessions from every supported harness':`Only ${esc(h)} sessions`}</small></span><span class="count">${countLabel(count)}</span></button>`;
+    }).join('')}`,'Counts use the current time and project scope. Choose All harnesses to clear this filter.');
+  }
+  function continuation(kind) {
+    const s=selected(); if(!s)return;
+    const meanings={resume:['Resume this session','Keep working in the same conversation, with its existing history.'],fork:['Fork this session','Branch into a separate conversation using the existing history. The original conversation remains separate.'],clean:['Start a clean session','Start with no inherited conversation in this directory. Normal project instructions still apply.']};
+    const unsupported=kind==='fork'&&!s.fork;
+    dialog('Continue with this work',`<div class="decision-tabs">${['resume','fork','clean'].map(k=>`<button class="${kind===k?'chosen':''}" data-kind="${k}">${k==='clean'?'Clean session':k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div><div class="section-label">${meanings[kind][0]}</div><p class="decision-copy">${unsupported?'Native fork is unavailable in this example. Choose Resume or Clean session instead.':meanings[kind][1]}</p><div class="field"><div class="section-label">Selected session</div><div>${esc(s.title)}</div></div><div class="field"><div class="section-label">Target directory</div><code>${esc(fullPath(s))}</code></div><div class="field"><div class="section-label">Provider · history</div><div>${esc(s.agent)} · ${kind==='clean'?'No inherited transcript':kind==='fork'?'Separate conversation from existing history':'Same native conversation'}</div></div><div class="command-placeholder"><strong>${unsupported?'UNAVAILABLE IN THIS EXAMPLE':'CONCEPT PREVIEW'}</strong>${unsupported?'Provider capabilities are illustrative, not a compatibility claim.':'The implemented adapter would prepare a validated native command here. This mockup creates no executable command.'}</div><div class="action-row"><button class="action primary" id="previewChoice" ${unsupported?'disabled':''}>Preview choice</button><button class="action" data-close="true">Back to overview</button></div>`,'Fictional capability examples · no command is executed or copied');
+    $('previewChoice').onclick=()=>{ $('dialog').close(); announce(`${meanings[kind][0]} · ${s.path} · concept only`); };
+  }
+  function messages(s) { return [
+    {role:'You',time:'10:12',text:s.request},
+    {role:s.agent,time:'10:14',text:`I’ll review the existing context for ${s.project} and focus on ${s.topic}. I’ll keep the working directory and the scope visible while evaluating the next step.`,tool:true},
+    {role:'You',time:'10:28',text:`Keep the main goal clear. I want to understand the ${s.topic} before deciding whether to continue this session or start fresh.`},
+    {role:s.agent,time:s.time,text:s.latest}
+  ]; }
+  function highlight(text,query) { if(!query)return esc(text); const lower=text.toLowerCase(), needle=query.toLowerCase(); let pos=0,out='',at; while((at=lower.indexOf(needle,pos))!==-1){out+=esc(text.slice(pos,at))+'<mark>'+esc(text.slice(at,at+query.length))+'</mark>';pos=at+query.length;} return out+esc(text.slice(pos)); }
+  function openTranscript(query='') { const s=selected(); if(!s)return; state.previousView=state.view;state.view='transcript';state.match=0;$('transcriptQuery').value=query;$('metadataBar').hidden=true;render(); }
+  function renderTranscript() { const s=selected();if(!s)return;$('transcriptTitle').textContent=s.title;$('transcriptPath').textContent=fullPath(s);const query=$('transcriptQuery').value.trim();$('messages').innerHTML=messages(s).map(m=>`<article class="message"><div class="role">${esc(m.role)}<time>${m.time}</time></div><p>${highlight(m.text,query)}</p>${m.tool?'<details><summary>Tool activity · 2 recorded events</summary><pre>Read project notes\nInspect session metadata</pre></details>':''}</article>`).join('');updateMatch(false); }
+  function updateMatch(scroll=true) { const matches=[...$('messages').querySelectorAll('mark')]; if(matches.length)state.match=((state.match%matches.length)+matches.length)%matches.length;else state.match=0;matches.forEach((m,i)=>m.classList.toggle('active',i===state.match));$('matchCount').textContent=!$('transcriptQuery').value.trim()?'Type to find':matches.length?`${state.match+1} / ${matches.length}`:'No matches';if(scroll)matches[state.match]?.scrollIntoView({block:'center'}); }
+  function openSearch() { state.view='search';$('metadataBar').hidden=true;render();$('contentQuery').focus(); }
+  function renderContentResults() { const query=$('contentQuery').value.trim(); if(!query){$('contentResults').innerHTML='<div class="empty"><strong>Search when you need more detail</strong>Find a phrase inside session conversations. The project, time, and harness scope above still apply.</div>';return;}const hits=sessions.filter(withinScope).flatMap(s=>messages(s).filter(m=>m.text.toLowerCase().includes(query.toLowerCase())).map(m=>({s,m})));$('contentResults').innerHTML=hits.map(({s,m})=>`<button class="result" data-hit="${s.id}"><strong>${esc(s.title)}</strong><small>${esc(s.path)} · ${esc(s.agent)}</small><p>${highlight(m.text,query)}</p></button>`).join('') || '<div class="empty"><strong>No matches in this scope</strong>Try another phrase or include older work.<br><button data-alltime="true">Search all time</button></div>'; }
+  function showHelp() { dialog('Navigate the concept','<p>Click controls or use the keyboard. All session data is fictional.</p><dl class="help-grid"><dt>↑ ↓ / j k</dt><dd>Move between sessions</dd><dt>Enter / Esc</dt><dd>Open overview / go back</dd><dt>w / p / h</dt><dd>Time / project / harness selector</dd><dt>/</dt><dd>Filter cards, or find in transcript</dd><dt>t / s</dt><dd>Transcript / cross-session content search</dd><dt>r / f / n</dt><dd>Resume / fork / clean-session preview</dd><dt>[ / ]</dt><dd>Previous / next transcript match</dd><dt>c</dt><dd>Copy the fictional exchange while reading</dd><dt>?</dt><dd>This help</dd></dl>','A browser concept of the TUI, not a connected session manager.'); }
+  function back() { if($('dialog').open){$('dialog').close();return;}if(state.view==='transcript'&&state.previousView==='search'){state.view='search';render();return;}if(state.view!=='home'){state.view='home';render();return;}if($('metadataQuery').dataset.open==='true'){state.filter='';$('metadataQuery').value='';$('metadataQuery').dataset.open='false';render();return;}$('terminal').classList.remove('overview-open');document.querySelector('.session.selected')?.focus(); }
+  function filter() { $('metadataQuery').dataset.open='true';$('metadataBar').hidden=false;$('metadataQuery').focus(); }
+  async function copyExchange() { const s=selected();if(!s)return;const text=`Fictional Trailmark concept\n${s.agent} · ${s.id}\n${fullPath(s)}\n\n${s.request}\n\n${s.latest}`;try{await navigator.clipboard.writeText(text);announce('Fictional exchange copied with its source context.');}catch{dialog('Copy the fictional exchange',`<p>Clipboard access is unavailable. Select and copy this text.</p><pre style="white-space:pre-wrap;font:inherit;font-size:12px">${esc(text)}</pre>`,'Nothing was copied automatically.');} }
+  function runAction(action) { ({time:showTime,project:showProjects,harness:showHarnesses,overview,filter,transcript:()=>openTranscript(),search:openSearch,help:showHelp,back,list:back,resume:()=>continuation('resume'),fork:()=>continuation('fork'),clean:()=>continuation('clean'),find:()=>$('transcriptQuery').focus(),next:()=>{state.match++;updateMatch();},copy:copyExchange,move:()=>announce('Use ↑ ↓ or j / k to move between sessions.')})[action]?.(); }
+  function scene(name) { state.scene=name;state.view='home';state.project='all';state.agent='all';state.range=7;state.selected='tm-01';state.filter='';$('metadataQuery').value='';$('metadataQuery').dataset.open='false';$('terminal').classList.remove('overview-open');if($('dialog').open)$('dialog').close();const notes={recent:['Recognize the work first.','Purpose and directory stay visible as you move through your week.'],older:['Seven days is a lens, not a limit.','Choose 30 days or All time to bring older work back into view.'],continue:['Choose what history to carry forward.','Each option keeps the target directory explicit.'],transcript:['Read only as deeply as you need.','Search the selected conversation, then return to the same overview.']};$('sceneNote').textContent=notes[name][0];$('sceneDescription').textContent=notes[name][1];render();$('sessionList').scrollTop=0;if(name==='older')showTime();if(name==='continue')continuation('resume');if(name==='transcript')openTranscript('overview'); }
+  document.addEventListener('click',event=>{
+    const b=event.target.closest('button');if(!b)return;
+    if(b.dataset.session)chooseSession(b.dataset.session);
+    if(b.dataset.action)runAction(b.dataset.action);
+    if(b.dataset.footer)runAction(b.dataset.footer);
+    if(b.dataset.scene)scene(b.dataset.scene);
+    if(b.dataset.range){state.range=Number(b.dataset.range);$('dialog').close();render();}
+    if(b.dataset.project){state.project=b.dataset.project;$('dialog').close();render();}
+    if(b.dataset.harness){state.agent=b.dataset.harness;if(state.view==='transcript'&&selected()&&!withinScope(selected()))state.view='home';$('dialog').close();render();}
+    if(b.dataset.kind)continuation(b.dataset.kind);
+    if(b.dataset.close)$('dialog').close();
+    if(b.dataset.reset){state.range=Infinity;state.project='all';state.agent='all';state.filter='';$('metadataQuery').value='';render();}
+    if(b.dataset.alltime){state.range=Infinity;render();}
+    if(b.dataset.hit){state.selected=b.dataset.hit;openTranscript($('contentQuery').value.trim());}
+  });
+  $('timeButton').onclick=showTime;$('projectButton').onclick=showProjects;$('harnessButton').onclick=showHarnesses;$('closeDialog').onclick=()=>$('dialog').close();
+  $('olderButton').onclick=()=>{if(state.range===Infinity)showTime();else{state.range=Infinity;render();document.querySelector('.session.selected')?.scrollIntoView({block:'nearest'});}};
+  $('metadataQuery').oninput=event=>{state.filter=event.target.value;renderHome();};$('clearFilter').onclick=()=>{state.filter='';$('metadataQuery').value='';renderHome();$('metadataQuery').focus();};
+  $('transcriptQuery').oninput=()=>{state.match=0;renderTranscript();};$('contentQuery').oninput=renderContentResults;
+  $('previousMatch').onclick=()=>{state.match--;updateMatch();};$('nextMatch').onclick=()=>{state.match++;updateMatch();};$('transcriptBack').onclick=back;$('searchBack').onclick=back;
+  $('themeToggle').onclick=()=>{const light=document.body.classList.toggle('light');$('themeToggle').textContent=light?'[ Dark theme ]':'[ Light theme ]';$('themeToggle').setAttribute('aria-pressed',String(light));};
+  $('sizeToggle').onclick=()=>{state.narrow=!state.narrow;$('terminal').classList.toggle('narrow',state.narrow);$('sizeToggle').setAttribute('aria-pressed',String(state.narrow));$('sizeToggle').textContent=state.narrow?'[ Narrow / wide ]':'[ Wide / narrow ]';};
+  document.addEventListener('keydown',event=>{
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
+    if($('dialog').open){if(['ArrowDown','ArrowUp','j','k'].includes(event.key)){event.preventDefault();const buttons=[...$('dialogBody').querySelectorAll('button:not(:disabled)')];if(!buttons.length)return;const i=buttons.indexOf(document.activeElement),delta=['ArrowDown','j'].includes(event.key)?1:-1;buttons[(i+delta+buttons.length)%buttons.length].focus();}return;}
+    if(event.key==='Escape'){event.preventDefault();back();return;}
+    if(['INPUT','TEXTAREA'].includes(event.target.tagName))return;
+    if(event.key==='Enter' && event.target.closest('button') && !event.target.dataset.session)return;
+    if(event.key==='?' ){event.preventDefault();showHelp();return;}
+    if(event.key==='w'){event.preventDefault();showTime();return;}if(event.key==='p'){event.preventDefault();showProjects();return;}if(event.key==='h'){event.preventDefault();showHarnesses();return;}
+    if(state.view==='home'){
+      if(['ArrowDown','j','ArrowUp','k'].includes(event.key)){event.preventDefault();moveSession(['ArrowDown','j'].includes(event.key)?1:-1);}
+      const keys={Enter:'overview','/':'filter',t:'transcript',s:'search',r:'resume',f:'fork',n:'clean'};
+      if(keys[event.key]){event.preventDefault();if(event.key==='Enter'&&event.target.dataset.session)chooseSession(event.target.dataset.session);runAction(keys[event.key]);}
+    }else if(state.view==='transcript'){
+      if(event.key==='/'){event.preventDefault();$('transcriptQuery').focus();}
+      if(event.key==='['||event.key===']'){event.preventDefault();state.match+=event.key===']'?1:-1;updateMatch();}
+      if(event.key==='c'){event.preventDefault();copyExchange();}
+    }
+  });
+  render();
+</script>
+</body>
+</html>
