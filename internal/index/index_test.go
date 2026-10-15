@@ -116,3 +116,32 @@ func TestRemoveAndSearchEscaping(t *testing.T) {
 		t.Errorf("counts after remove = %+v", counts)
 	}
 }
+
+func TestOverviewExcerptsSkipSetupAndPairLatestReply(t *testing.T) {
+	ctx := context.Background()
+	ix := openTestIndex(t)
+	s := fixtureSession()
+	s.Messages = []model.Message{
+		{Seq: 1, Role: "user", Kind: "message", Text: "<environment_context> <cwd>/work</cwd> </environment_context>", Locator: model.Locator{Line: 1}},
+		{Seq: 2, Role: "user", Kind: "message", Text: "First real request", Locator: model.Locator{Line: 2}},
+		{Seq: 3, Role: "assistant", Kind: "message", Text: "Early answer part one", Locator: model.Locator{Line: 3}},
+		{Seq: 4, Role: "assistant", Kind: "message", Text: "Second part of early answer", Locator: model.Locator{Line: 4}},
+		{Seq: 5, Role: "user", Kind: "message", Text: "Unanswered final question", Locator: model.Locator{Line: 5}},
+	}
+	if err := ix.Upsert(ctx, s, 100, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ov, err := ix.Overview(ctx, s.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ov.InitialRequest != "First real request" {
+		t.Errorf("InitialRequest = %q, want the first substantive request", ov.InitialRequest)
+	}
+	if ov.LatestUser != "Unanswered final question" {
+		t.Errorf("LatestUser = %q", ov.LatestUser)
+	}
+	if ov.LatestAssistant != "" {
+		t.Errorf("LatestAssistant = %q, want empty: no reply follows the latest user message", ov.LatestAssistant)
+	}
+}

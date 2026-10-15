@@ -13,6 +13,7 @@ import (
 	"github.com/juanrubio/trailmark/internal/config"
 	"github.com/juanrubio/trailmark/internal/index"
 	"github.com/juanrubio/trailmark/internal/scan"
+	"github.com/juanrubio/trailmark/internal/tui"
 )
 
 // Version is the build version reported by --version.
@@ -25,9 +26,9 @@ var IsTerminal = func(f *os.File) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// NewRootCmd builds the root command. In Phase 1 a terminal launch
-// performs discovery and indexing and reports coverage; the
-// interactive TUI itself arrives in Phase 2.
+// NewRootCmd builds the root command. A terminal launch opens the
+// recent-work TUI; the cached index paints first and a background
+// scan refreshes it.
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "trailmark",
@@ -40,14 +41,14 @@ func NewRootCmd() *cobra.Command {
 			if !IsTerminal(os.Stdout) {
 				return fmt.Errorf("needs an interactive terminal; it cannot run with piped or redirected output")
 			}
-			return runScan(cmd.Context(), cmd)
+			return runTUI(cmd.Context())
 		},
 	}
 	cmd.CompletionOptions.DisableDefaultCmd = true
 	return cmd
 }
 
-func runScan(ctx context.Context, cmd *cobra.Command) error {
+func runTUI(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -71,23 +72,7 @@ func runScan(ctx context.Context, cmd *cobra.Command) error {
 		Adapters: scan.DefaultAdapters(home),
 		Config:   cfg,
 	}
-	stats, err := scanner.Scan(ctx)
-	if err != nil {
-		return err
-	}
-	counts, err := ix.Stats(ctx)
-	if err != nil {
-		return err
-	}
-	out := cmd.OutOrStdout()
-	for _, failed := range stats.FailedRoots {
-		fmt.Fprintf(out, "Warning: could not scan %s; its previously indexed sessions were kept.\n", failed)
-	}
-	fmt.Fprintf(out, "Indexed %d session(s): %d discovered, %d updated, %d unchanged, %d partial, %d failed, %d excluded.\n",
-		counts.Sessions, stats.Discovered, stats.Indexed, stats.Skipped, stats.Partial, stats.Failed, stats.Excluded)
-	fmt.Fprintf(out, "Index: %s\n", indexPath)
-	fmt.Fprintln(out, "The interactive TUI arrives in a later phase; the local index is ready and source logs were left unchanged.")
-	return nil
+	return tui.Run(ctx, tui.Deps{Index: ix, Scanner: scanner})
 }
 
 // Execute runs the root command.

@@ -15,6 +15,7 @@ import (
 
 	_ "modernc.org/sqlite" // CGo-free SQLite driver with FTS5
 
+	"github.com/juanrubio/trailmark/internal/adapter"
 	"github.com/juanrubio/trailmark/internal/model"
 )
 
@@ -250,13 +251,17 @@ type SessionRow struct {
 	Purpose       string
 	PurposeOrigin model.PurposeOrigin
 	CWD           string
+	Store         string
+	ParentID      string
+	ForkedFrom    string
+	Sidechain     bool
 	LastActivity  *time.Time
 	Partial       bool
 }
 
 // ListSessions returns sessions newest-activity first.
 func (ix *Index) ListSessions(ctx context.Context, limit int) ([]SessionRow, error) {
-	rows, err := ix.db.QueryContext(ctx, `SELECT source_path, provider, native_id, title, purpose, purpose_origin, cwd, last_activity, partial
+	rows, err := ix.db.QueryContext(ctx, `SELECT source_path, provider, native_id, title, purpose, purpose_origin, cwd, store, parent_id, forked_from, sidechain, last_activity, partial
 		FROM sessions ORDER BY COALESCE(last_activity, 0) DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -267,13 +272,14 @@ func (ix *Index) ListSessions(ctx context.Context, limit int) ([]SessionRow, err
 		var r SessionRow
 		var provider, origin string
 		var last sql.NullInt64
-		var partial int
-		if err := rows.Scan(&r.SourcePath, &provider, &r.ID, &r.Title, &r.Purpose, &origin, &r.CWD, &last, &partial); err != nil {
+		var partial, sidechain int
+		if err := rows.Scan(&r.SourcePath, &provider, &r.ID, &r.Title, &r.Purpose, &origin, &r.CWD, &r.Store, &r.ParentID, &r.ForkedFrom, &sidechain, &last, &partial); err != nil {
 			return nil, fmt.Errorf("scan session row: %w", err)
 		}
 		r.Provider = model.Provider(provider)
 		r.PurposeOrigin = model.PurposeOrigin(origin)
 		r.Partial = partial != 0
+		r.Sidechain = sidechain != 0
 		if last.Valid {
 			t := time.Unix(last.Int64, 0)
 			r.LastActivity = &t
@@ -281,6 +287,86 @@ func (ix *Index) ListSessions(ctx context.Context, limit int) ([]SessionRow, err
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// Overview carries the selected-session detail shown beside the list.
+type Overview struct {
+	Session         SessionRow
+	InitialRequest  string
+	LatestUser      string
+	LatestAssistant string
+}
+
+// Overview loads one session's row plus its initial request and
+// latest substantive exchange from the index.
+func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, error) {
+	row := ix.db.QueryRowContext(ctx, `SELECT source_path, provider, native_id, title, purpose, purpose_origin, cwd, store, parent_id, forked_from, sidechain, last_activity, partial
+		FROM sessions WHERE source_path = ?`, sourcePath)
+	var o Overview
+	var provider, origin string
+	var last sql.NullInt64
+	var partial, sidechain int
+	r := &o.Session
+	if err := row.Scan(&r.SourcePath, &provider, &r.ID, &r.Title, &r.Purpose, &origin, &r.CWD, &r.Store, &r.ParentID, &r.ForkedFrom, &sidechain, &last, &partial); err != nil {
+		return nil, fmt.Errorf("load overview %s: %w", sourcePath, err)
+	}
+	r.Provider = model.Provider(provider)
+	r.PurposeOrigin = model.PurposeOrigin(origin)
+	r.Partial = partial != 0
+	r.Sidechain = sidechain != 0
+	if last.Valid {
+		t := time.Unix(last.Int64, 0)
+		r.LastActivity = &t
+	}
+	// Excerpts must skip injected setup text exactly as purpose
+	// derivation does, and the latest exchange must pair the latest
+	// substantive user message with the final assistant reply that
+	// follows it — never with an answer from an earlier exchange.
+	type userMsg struct {
+		seq  int64
+		text string
+	}
+	rows, err := ix.db.QueryContext(ctx, `SELECT seq, text FROM messages WHERE source_path = ? AND role = 'user' AND kind = 'message' ORDER BY seq ASC`, sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("load overview messages %s: %w", sourcePath, err)
+	}
+	var users []userMsg
+	for rows.Next() {
+		var u userMsg
+		if err := rows.Scan(&u.seq, &u.text); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan overview message: %w", err)
+		}
+		users = append(users, u)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load overview messages %s: %w", sourcePath, err)
+	}
+	var latestUser *userMsg
+	for i := range users {
+		if !adapter.Substantive(users[i].text) {
+			continue
+		}
+		if o.InitialRequest == "" {
+			o.InitialRequest = users[i].text
+		}
+		latestUser = &users[i]
+	}
+	text := func(query string, args ...any) string {
+		var v sql.NullString
+		if err := ix.db.QueryRowContext(ctx, query, args...).Scan(&v); err != nil {
+			return ""
+		}
+		return v.String
+	}
+	if latestUser != nil {
+		o.LatestUser = latestUser.text
+		o.LatestAssistant = text(`SELECT text FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' AND seq > ? ORDER BY seq DESC LIMIT 1`, sourcePath, latestUser.seq)
+	} else {
+		o.LatestAssistant = text(`SELECT text FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' ORDER BY seq DESC LIMIT 1`, sourcePath)
+	}
+	return &o, nil
 }
 
 // SearchHit is one FTS5 content match.
