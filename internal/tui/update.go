@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
 	"github.com/juanrubio/trailmark/internal/model"
 )
@@ -71,6 +72,12 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch m.overlay {
+	case overlaySheet:
+		return m.onSheetKey(s)
+	case overlayCopyMenu:
+		return m.onCopyMenuKey(s)
+	case overlayCopyPreview:
+		return m.onCopyPreviewKey(s)
 	case overlayHelp:
 		if s == "esc" || s == "q" || s == "?" {
 			m.overlay = overlayNone
@@ -128,8 +135,14 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 		m.overlay = overlayHelp
 	case "t":
 		m.notice = "Transcript reading arrives in a later phase."
-	case "r", "f", "n":
-		m.notice = "Continuation choices arrive in the next phase."
+	case "r":
+		m.openSheet(continuation.Resume)
+	case "f":
+		m.openSheet(continuation.Fork)
+	case "n":
+		m.openSheet(continuation.Clean)
+	case "c":
+		m.openCopyMenu()
 	case "s":
 		m.notice = "Content search arrives in a later phase."
 	}
@@ -138,6 +151,18 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 
 func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 	switch s {
+	case "r":
+		m.openSheet(continuation.Resume)
+		return m, nil
+	case "f":
+		m.openSheet(continuation.Fork)
+		return m, nil
+	case "n":
+		m.openSheet(continuation.Clean)
+		return m, nil
+	case "c":
+		m.openCopyMenu()
+		return m, nil
 	case "esc", "q":
 		m.overviewOpen = false
 		m.focus = focusList
@@ -384,3 +409,106 @@ func (m *appModel) afterFilterChange() {
 }
 
 func (m *appModel) isWide() bool { return m.width >= 110 }
+
+// --- continuation sheet and copying ---
+
+func (m *appModel) openSheet(action continuation.Action) {
+	c, ok := m.selected()
+	if !ok {
+		return
+	}
+	capability := m.caps[c.row.Provider]
+	prepared := continuation.Prepare(action, capability, c.row.Provider, c.row.ID, c.row.CWD, c.row.Purpose)
+	m.sheet = &prepared
+	m.sheetState = ""
+	m.sheetScroll = 0
+	m.overlay = overlaySheet
+}
+
+func (m *appModel) onSheetKey(s string) (tea.Model, tea.Cmd) {
+	switch s {
+	case "j", "down":
+		m.sheetScroll++
+	case "k", "up":
+		if m.sheetScroll > 0 {
+			m.sheetScroll--
+		}
+	case "esc", "q":
+		m.overlay = overlayNone
+		m.sheet = nil
+	case "enter", "c":
+		if m.sheet != nil && m.sheet.Available && m.copier != nil {
+			if err := m.copier.Copy(m.sheet.Command); err != nil {
+				m.sheetState = "failed"
+			} else {
+				m.sheetState = "copied"
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m *appModel) openCopyMenu() {
+	c, ok := m.selected()
+	if !ok {
+		return
+	}
+	m.refreshDetail()
+	m.copyItems = m.buildCopyItems(c.row, m.detail)
+	m.copyCursor = 0
+	m.copyState = ""
+	m.overlay = overlayCopyMenu
+}
+
+func (m *appModel) onCopyMenuKey(s string) (tea.Model, tea.Cmd) {
+	switch s {
+	case "esc", "q":
+		m.overlay = overlayNone
+	case "j", "down":
+		if m.copyCursor < len(m.copyItems)-1 {
+			m.copyCursor++
+		}
+	case "k", "up":
+		if m.copyCursor > 0 {
+			m.copyCursor--
+		}
+	case "enter":
+		if m.copyCursor >= 0 && m.copyCursor < len(m.copyItems) {
+			item := m.copyItems[m.copyCursor]
+			if !item.available {
+				m.notice = "That content is unavailable for this session."
+				m.overlay = overlayNone
+				return m, nil
+			}
+			m.copyPreview = &item
+			m.copyState = ""
+			m.copyScroll = 0
+			m.overlay = overlayCopyPreview
+		}
+	}
+	return m, nil
+}
+
+func (m *appModel) onCopyPreviewKey(s string) (tea.Model, tea.Cmd) {
+	switch s {
+	case "j", "down":
+		m.copyScroll++
+	case "k", "up":
+		if m.copyScroll > 0 {
+			m.copyScroll--
+		}
+	case "esc":
+		m.overlay = overlayCopyMenu
+	case "q":
+		m.overlay = overlayNone
+	case "enter", "c":
+		if m.copyPreview != nil && m.copier != nil {
+			if err := m.copier.Copy(m.copyPreview.text); err != nil {
+				m.copyState = "failed"
+			} else {
+				m.copyState = "copied"
+			}
+		}
+	}
+	return m, nil
+}

@@ -4,7 +4,7 @@ A local, keyboard-first TUI for remembering recent coding-agent work and decidin
 
 See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area.
 
-**Status:** Phase 2 implemented — the recent-work TUI (seven-day overview, filters, session overview) now launches from `trailmark`. Continuation choices, transcript reading, and content search follow in later phases. The project name has not been cleared.
+**Status:** Phase 3 implemented — continuation sheets (resume, fork, clean session) prepare and copy validated commands, and session context copies with provenance. Transcript reading and content search follow in later phases. The project name has not been cleared.
 
 ## Core workflows
 

@@ -30,6 +30,12 @@ func (m *appModel) View() tea.View {
 		content = m.viewHelp(w, h)
 	case m.overlay == overlaySelector:
 		content = m.viewSelector(w, h)
+	case m.overlay == overlaySheet:
+		content = m.viewSheet(w, h)
+	case m.overlay == overlayCopyMenu:
+		content = m.viewCopyMenu(w, h)
+	case m.overlay == overlayCopyPreview:
+		content = m.viewCopyPreview(w, h)
 	case m.overviewOpen:
 		content = m.viewOverviewPage(w, h)
 	default:
@@ -241,7 +247,7 @@ func (m *appModel) renderOverview(w, h int) string {
 	}
 	lines = append(lines, "", "Continue with this work")
 	lines = append(lines, "[r] Resume   [f] Fork   [n] Clean session")
-	for _, l := range wrap("Continuation choices arrive in the next phase; nothing is launched.", w) {
+	for _, l := range wrap("Opens command preparation; no agent is launched.", w) {
 		lines = append(lines, styleDim.Render(l))
 	}
 	if m.overviewScroll > 0 {
@@ -308,7 +314,8 @@ func (m *appModel) viewHelp(w, h int) string {
 		"e            Expand or collapse child sessions",
 		"R            Apply refreshed session ordering",
 		"t            Transcript (later phase)",
-		"r / f / n    Resume, fork, clean session (next phase)",
+		"r / f / n    Resume, fork, clean session",
+		"c            Copy directory or session context",
 		"s            Content search (later phase)",
 		"?            This help",
 		"q            Quit",
@@ -408,4 +415,120 @@ func (m *appModel) emptyState(w int) string {
 		return "No sessions in the last 7 days.\n\nPress w and choose All time to see older work."
 	}
 	return "No sessions in the current scope.\n\nActive scope: " + m.windowLabel() + " · " + m.projectLabel() + " · " + m.harnessLabel() + "\nPress w, p, or h to adjust the scope."
+}
+
+func (m *appModel) viewSheet(w, h int) string {
+	if m.sheet == nil {
+		return ""
+	}
+	p := m.sheet
+	lines := []string{styleHeading.Render(p.Title), ""}
+	if p.Purpose != "" {
+		lines = append(lines, wrap(p.Purpose, w)...)
+	}
+	lines = append(lines, "Provider: "+providerLabel(p.Provider), "")
+	lines = append(lines, styleHeading.Render("What happens"))
+	lines = append(lines, wrap(p.History, w)...)
+	lines = append(lines, "", styleHeading.Render("Target directory"))
+	target := p.TargetDir
+	if target == "" {
+		target = "unavailable"
+	}
+	lines = append(lines, wrap(target, w)...)
+	lines = append(lines, "", styleHeading.Render("Command"))
+	var pinned []string
+	if p.Available {
+		if m.sheetState == "failed" {
+			// One unbroken line: the terminal soft-wraps it without
+			// inserting characters, so manual selection stays exact.
+			lines = append(lines, p.Command)
+		} else {
+			lines = append(lines, wrap(p.Command, w)...)
+		}
+		pinned = append(pinned, "This command is prepared for copying only. Trailmark does not run it.", "It targets a POSIX shell on Linux.")
+	} else {
+		lines = append(lines, wrap("Unavailable: "+p.Reason, w)...)
+	}
+	switch m.sheetState {
+	case "copied":
+		pinned = append(pinned, styleAccent.Render("Command copied to the clipboard."))
+	case "failed":
+		pinned = append(pinned, "Copy failed: the clipboard is unavailable. Select the command text above and copy it manually.")
+	}
+	if p.Available {
+		pinned = append(pinned, "Enter/c Copy command  ↑↓/jk Scroll  Esc Back")
+	} else {
+		pinned = append(pinned, "↑↓/jk Scroll  Esc Back")
+	}
+	bodyH := h - len(pinned)
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	return windowLines(lines, m.sheetScroll, bodyH) + "\n" + strings.Join(pinned, "\n")
+}
+
+func (m *appModel) viewCopyMenu(w, h int) string {
+	lines := []string{styleHeading.Render("Copy"), ""}
+	for i, item := range m.copyItems {
+		marker := "  "
+		if i == m.copyCursor {
+			marker = styleAccent.Render("▌ ")
+		}
+		lines = append(lines, marker+item.label)
+	}
+	lines = append(lines, "", "↑↓/jk Select  Enter Preview  Esc Back")
+	return strings.Join(lines, "\n")
+}
+
+func (m *appModel) viewCopyPreview(w, h int) string {
+	if m.copyPreview == nil {
+		return ""
+	}
+	header := []string{styleHeading.Render(m.copyPreview.label), "", "This is exactly what will be copied:", ""}
+	var pinned []string
+	switch m.copyState {
+	case "copied":
+		pinned = append(pinned, styleAccent.Render("Copied to the clipboard."))
+	case "failed":
+		pinned = append(pinned, "Copy failed: the clipboard is unavailable. Select the text above and copy it manually.")
+	}
+	pinned = append(pinned, "Enter/c Copy  ↑↓/jk Scroll  Esc Back")
+	bodyH := h - len(header) - len(pinned)
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	body := windowLines(wrapPreserve(m.copyPreview.text, w), m.copyScroll, bodyH)
+	return strings.Join(header, "\n") + "\n" + body + "\n" + strings.Join(pinned, "\n")
+}
+
+// wrapPreserve hard-wraps text at display width without collapsing
+// or altering any whitespace inside a line. Only line breaks are
+// added, so previews of copy payloads stay faithful.
+func wrapPreserve(s string, w int) []string {
+	if w <= 0 {
+		return strings.Split(s, "\n")
+	}
+	var out []string
+	for _, para := range strings.Split(s, "\n") {
+		if para == "" {
+			out = append(out, "")
+			continue
+		}
+		line := ""
+		width := 0
+		for _, r := range para {
+			rw := lipgloss.Width(string(r))
+			if rw == 0 {
+				rw = 1 // tabs and controls still occupy a cell here
+			}
+			if width+rw > w && line != "" {
+				out = append(out, line)
+				line, width = "", 0
+			}
+			line += string(r)
+			width += rw
+		}
+		out = append(out, line)
+	}
+	return out
 }

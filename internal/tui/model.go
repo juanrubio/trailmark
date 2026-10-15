@@ -10,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/juanrubio/trailmark/internal/clipboard"
+	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
 	"github.com/juanrubio/trailmark/internal/model"
 )
@@ -21,6 +23,9 @@ const (
 	overlayHelp
 	overlaySelector
 	overlayFilter
+	overlaySheet
+	overlayCopyMenu
+	overlayCopyPreview
 )
 
 type selectorKind int
@@ -84,9 +89,20 @@ type appModel struct {
 	overviewScroll int
 	notice         string
 	failedRoots    []string
+
+	caps        map[model.Provider]model.Capability
+	copier      clipboard.Copier
+	sheet       *continuation.Prepared
+	sheetState  string // "", "copied", "failed"
+	copyItems   []copyItem
+	copyCursor  int
+	copyPreview *copyItem
+	copyState   string // "", "copied", "failed"
+	copyScroll  int
+	sheetScroll int
 }
 
-func newModel(ctx context.Context, overview overviewFunc, scanCmd tea.Cmd, launchDir, home string, sessions []index.SessionRow) *appModel {
+func newModel(ctx context.Context, overview overviewFunc, scanCmd tea.Cmd, launchDir, home string, sessions []index.SessionRow, caps map[model.Provider]model.Capability, copier clipboard.Copier) *appModel {
 	m := &appModel{
 		ctx:        ctx,
 		overview:   overview,
@@ -98,6 +114,8 @@ func newModel(ctx context.Context, overview overviewFunc, scanCmd tea.Cmd, launc
 		windowDays: 7,
 		expanded:   map[string]bool{},
 	}
+	m.caps = caps
+	m.copier = copier
 	m.partialCount = countPartial(sessions)
 	m.refreshDetail()
 	return m

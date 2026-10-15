@@ -289,12 +289,24 @@ func (ix *Index) ListSessions(ctx context.Context, limit int) ([]SessionRow, err
 	return out, rows.Err()
 }
 
+// Excerpt is one indexed message shown in an overview, with the
+// source locator needed for provenance when copying.
+type Excerpt struct {
+	Text      string
+	Line      int
+	RecordID  string
+	Timestamp *time.Time
+}
+
 // Overview carries the selected-session detail shown beside the list.
 type Overview struct {
 	Session         SessionRow
 	InitialRequest  string
 	LatestUser      string
 	LatestAssistant string
+	Initial         Excerpt
+	LatestUserEx    Excerpt
+	LatestAsstEx    Excerpt
 }
 
 // Overview loads one session's row plus its initial request and
@@ -325,15 +337,18 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 	type userMsg struct {
 		seq  int64
 		text string
+		line int
+		rec  string
+		ts   sql.NullInt64
 	}
-	rows, err := ix.db.QueryContext(ctx, `SELECT seq, text FROM messages WHERE source_path = ? AND role = 'user' AND kind = 'message' ORDER BY seq ASC`, sourcePath)
+	rows, err := ix.db.QueryContext(ctx, `SELECT seq, text, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'user' AND kind = 'message' ORDER BY seq ASC`, sourcePath)
 	if err != nil {
 		return nil, fmt.Errorf("load overview messages %s: %w", sourcePath, err)
 	}
 	var users []userMsg
 	for rows.Next() {
 		var u userMsg
-		if err := rows.Scan(&u.seq, &u.text); err != nil {
+		if err := rows.Scan(&u.seq, &u.text, &u.line, &u.rec, &u.ts); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("scan overview message: %w", err)
 		}
@@ -343,6 +358,14 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("load overview messages %s: %w", sourcePath, err)
 	}
+	excerpt := func(u userMsg) Excerpt {
+		e := Excerpt{Text: u.text, Line: u.line, RecordID: u.rec}
+		if u.ts.Valid {
+			t := time.Unix(u.ts.Int64, 0)
+			e.Timestamp = &t
+		}
+		return e
+	}
 	var latestUser *userMsg
 	for i := range users {
 		if !adapter.Substantive(users[i].text) {
@@ -350,21 +373,30 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 		}
 		if o.InitialRequest == "" {
 			o.InitialRequest = users[i].text
+			o.Initial = excerpt(users[i])
 		}
 		latestUser = &users[i]
 	}
-	text := func(query string, args ...any) string {
-		var v sql.NullString
-		if err := ix.db.QueryRowContext(ctx, query, args...).Scan(&v); err != nil {
-			return ""
+	asst := func(query string, args ...any) Excerpt {
+		var e Excerpt
+		var ts sql.NullInt64
+		if err := ix.db.QueryRowContext(ctx, query, args...).Scan(&e.Text, &e.Line, &e.RecordID, &ts); err != nil {
+			return Excerpt{}
 		}
-		return v.String
+		if ts.Valid {
+			t := time.Unix(ts.Int64, 0)
+			e.Timestamp = &t
+		}
+		return e
 	}
 	if latestUser != nil {
 		o.LatestUser = latestUser.text
-		o.LatestAssistant = text(`SELECT text FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' AND seq > ? ORDER BY seq DESC LIMIT 1`, sourcePath, latestUser.seq)
+		o.LatestUserEx = excerpt(*latestUser)
+		o.LatestAsstEx = asst(`SELECT text, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' AND seq > ? ORDER BY seq DESC LIMIT 1`, sourcePath, latestUser.seq)
+		o.LatestAssistant = o.LatestAsstEx.Text
 	} else {
-		o.LatestAssistant = text(`SELECT text FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' ORDER BY seq DESC LIMIT 1`, sourcePath)
+		o.LatestAsstEx = asst(`SELECT text, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' ORDER BY seq DESC LIMIT 1`, sourcePath)
+		o.LatestAssistant = o.LatestAsstEx.Text
 	}
 	return &o, nil
 }

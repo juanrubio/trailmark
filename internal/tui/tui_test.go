@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
 	"github.com/juanrubio/trailmark/internal/model"
 )
@@ -37,12 +38,16 @@ func fixtureOverview(ctx context.Context, path string) (*index.Overview, error) 
 		InitialRequest:  "Make recent work easy to recognize",
 		LatestUser:      "Continue with this work",
 		LatestAssistant: "Updated the overview design",
+		Initial:         index.Excerpt{Text: "Make recent work easy to recognize", Line: 2, RecordID: "u-1"},
+		LatestUserEx:    index.Excerpt{Text: "Continue with this work", Line: 9},
+		LatestAsstEx:    index.Excerpt{Text: "Updated the overview design", Line: 10},
 	}, nil
 }
 
 func testModel(t *testing.T) *appModel {
 	t.Helper()
-	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions())
+	continuation.DirExists = func(string) bool { return true }
+	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions(), testCaps(), &fakeClipboard{})
 	m.now = func() time.Time { return testNow }
 	m.width, m.height = 120, 40
 	return m
@@ -279,7 +284,7 @@ func TestResizeAcrossBoundaryKeepsOverviewReachable(t *testing.T) {
 }
 
 func TestFirstScanAppliesImmediately(t *testing.T) {
-	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", nil)
+	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", nil, testCaps(), &fakeClipboard{})
 	m.now = func() time.Time { return testNow }
 	m.Update(scanDoneMsg{sessions: fixtureSessions()})
 	if m.hasPending {
@@ -319,5 +324,177 @@ func TestHelpOverlay(t *testing.T) {
 	send(m, "esc")
 	if m.overlay != overlayNone {
 		t.Error("Esc must close help")
+	}
+}
+
+type fakeClipboard struct {
+	text string
+	err  error
+}
+
+func (f *fakeClipboard) Copy(text string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.text = text
+	return nil
+}
+
+func testCaps() map[model.Provider]model.Capability {
+	return map[model.Provider]model.Capability{
+		model.ProviderClaudeCode: {Provider: model.ProviderClaudeCode, ResumeTemplate: "claude --resume {id}", ForkTemplate: "claude --resume {id} --fork-session", ForkSupported: true, CleanTemplate: "claude"},
+		model.ProviderCodex:      {Provider: model.ProviderCodex, ResumeTemplate: "codex resume {id}", ForkTemplate: "codex fork {id}", ForkSupported: true, CleanTemplate: "codex"},
+	}
+}
+
+func TestResumeSheetShowsCommandAndCopies(t *testing.T) {
+	m := testModel(t)
+	send(m, "r")
+	if m.overlay != overlaySheet || m.sheet == nil {
+		t.Fatal("r must open the resume sheet")
+	}
+	if !m.sheet.Available {
+		t.Fatalf("sheet unavailable: %s", m.sheet.Reason)
+	}
+	view := m.View().Content
+	for _, want := range []string{"Resume session", "/home/dev/repos/trailmark", "Copy command"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("sheet missing %q", want)
+		}
+	}
+	fake := m.copier.(*fakeClipboard)
+	send(m, "enter")
+	if m.sheetState != "copied" || !strings.Contains(fake.text, "codex resume") {
+		t.Errorf("copied = %q state=%q", fake.text, m.sheetState)
+	}
+	send(m, "esc")
+	if m.overlay != overlayNone {
+		t.Error("Esc must close the sheet")
+	}
+}
+
+func TestSheetClipboardFailureShowsSelectableText(t *testing.T) {
+	m := testModel(t)
+	m.copier = &fakeClipboard{err: errFakeClipboard}
+	send(m, "r")
+	send(m, "enter")
+	if m.sheetState != "failed" {
+		t.Fatalf("state = %q, want failed", m.sheetState)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "Copy failed") || !strings.Contains(view, m.sheet.Command) {
+		t.Error("failure state must show the command as selectable text")
+	}
+}
+
+func TestCopyMenuPreviewHasProvenance(t *testing.T) {
+	m := testModel(t)
+	send(m, "c")
+	if m.overlay != overlayCopyMenu {
+		t.Fatal("c must open the copy menu")
+	}
+	send(m, "j") // initial request
+	send(m, "enter")
+	if m.overlay != overlayCopyPreview || m.copyPreview == nil {
+		t.Fatal("Enter must show the exact copy preview")
+	}
+	view := m.View().Content
+	for _, want := range []string{"Provider:", "Session:", "Source:", "exactly what will be copied"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("preview missing provenance %q", want)
+		}
+	}
+	send(m, "enter")
+	fake := m.copier.(*fakeClipboard)
+	if !strings.Contains(fake.text, "Make recent work easy to recognize") {
+		t.Errorf("copied text = %q", fake.text)
+	}
+	send(m, "esc")
+	if m.overlay != overlayCopyMenu {
+		t.Error("Esc from preview must return to the copy menu")
+	}
+}
+
+var errFakeClipboard = errClipboard("unavailable")
+
+type errClipboard string
+
+func (e errClipboard) Error() string { return string(e) }
+
+func TestFailedSheetShowsExactCommand(t *testing.T) {
+	m := testModel(t)
+	m.copier = &fakeClipboard{err: errFakeClipboard}
+	send(m, "r")
+	send(m, "enter")
+	if m.sheetState != "failed" {
+		t.Fatalf("state = %q", m.sheetState)
+	}
+	if !strings.Contains(m.View().Content, m.sheet.Command) {
+		t.Error("failed sheet must contain the exact unbroken command for manual selection")
+	}
+}
+
+func TestForkUnavailableSheetInTUI(t *testing.T) {
+	m := testModel(t)
+	caps := testCaps()
+	c := caps[model.ProviderCodex]
+	c.ForkSupported = false
+	c.ForkTemplate = ""
+	caps[model.ProviderCodex] = c
+	m.caps = caps
+	send(m, "f")
+	if m.sheet == nil || m.sheet.Available {
+		t.Fatal("fork sheet must be unavailable")
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "Fork unavailable") || strings.Contains(view, "Copy command") {
+		t.Error("unavailable sheet must explain and not advertise copying")
+	}
+}
+
+func TestEscFromSheetPreservesFilterAndSelection(t *testing.T) {
+	m := testModel(t)
+	m.filterText = "deployment"
+	m.afterFilterChange()
+	m.sel = 0
+	send(m, "r")
+	send(m, "esc")
+	if m.filterText != "deployment" {
+		t.Errorf("filter lost: %q", m.filterText)
+	}
+	if c, ok := m.selected(); !ok || c.row.ID != "b1" {
+		t.Error("selection must be restored after Esc")
+	}
+}
+
+func TestFilterInputSwallowsActionKeys(t *testing.T) {
+	m := testModel(t)
+	send(m, "/")
+	send(m, "r")
+	send(m, "c")
+	if m.overlay != overlayFilter || m.sheet != nil {
+		t.Error("action keys typed in the filter must not open sheets")
+	}
+	if m.filterText != "rc" {
+		t.Errorf("filter text = %q, want typed runes", m.filterText)
+	}
+	send(m, "esc")
+}
+
+func TestCopyPayloadBytesExactWithWhitespace(t *testing.T) {
+	m := testModel(t)
+	send(m, "c")
+	send(m, "j")
+	send(m, "enter")
+	if m.copyPreview == nil {
+		t.Fatal("preview missing")
+	}
+	send(m, "enter")
+	fake := m.copier.(*fakeClipboard)
+	if fake.text != m.copyPreview.text {
+		t.Error("copied bytes must equal the previewed payload exactly")
+	}
+	if !strings.Contains(m.View().Content, "exactly what will be copied") {
+		t.Error("preview heading missing")
 	}
 }

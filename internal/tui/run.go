@@ -7,7 +7,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/juanrubio/trailmark/internal/adapter/claudecode"
+	"github.com/juanrubio/trailmark/internal/adapter/codex"
+	"github.com/juanrubio/trailmark/internal/clipboard"
 	"github.com/juanrubio/trailmark/internal/index"
+	"github.com/juanrubio/trailmark/internal/model"
 	"github.com/juanrubio/trailmark/internal/scan"
 )
 
@@ -41,7 +45,11 @@ func Run(ctx context.Context, deps Deps) error {
 		}
 		return scanDoneMsg{sessions: fresh, failedRoots: stats.FailedRoots}
 	}
-	m := newModel(ctx, deps.Index.Overview, scanCmd, launchDir, home, sessions)
+	caps := map[model.Provider]model.Capability{
+		model.ProviderClaudeCode: claudecode.Adapter{}.Capability(),
+		model.ProviderCodex:      codex.Adapter{}.Capability(),
+	}
+	m := newModel(ctx, deps.Index.Overview, scanCmd, launchDir, home, sessions, caps, clipboard.System{})
 	p := tea.NewProgram(m, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("run TUI: %w", err)
