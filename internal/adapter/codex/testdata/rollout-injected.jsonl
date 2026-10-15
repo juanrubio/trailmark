@@ -1,0 +1,4 @@
+{"timestamp":"2026-10-14T10:00:00Z","type":"session_meta","payload":{"id":"019d0000-0000-7000-8000-000000000003","timestamp":"2026-10-14T10:00:00Z","cwd":"/work/injected-codex","originator":"codex_cli_rs","cli_version":"0.0.0-fixture","source":"cli","model_provider":"fixture"}}
+{"timestamp":"2026-10-14T10:00:10Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context> <cwd>/work/injected-codex</cwd> </environment_context>"}]}}
+{"timestamp":"2026-10-14T10:01:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Ship the actual codex task"}]}}
+{"timestamp":"2026-10-14T10:02:00Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"call-9","arguments":"{\"command\":\"grep -rn upload internal/worker\"}"}}

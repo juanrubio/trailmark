@@ -1,0 +1,4 @@
+{"timestamp":"2026-10-12T07:00:00Z","type":"session_meta","payload":{"id":"019d0000-0000-7000-8000-000000000002","timestamp":"2026-10-12T07:00:00Z","cwd":"/work/forked-project","originator":"codex_cli_rs","cli_version":"0.0.0-fixture","source":"cli","model_provider":"fixture","forked_from_id":"019d0000-0000-7000-8000-000000000099","parent_thread_id":"019d0000-0000-7000-8000-000000000098"}}
+{"timestamp":"2026-10-12T07:01:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue the forked investigation"}]}}
+{"timestamp":"2026-10-12T07:02:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Forked context loaded."}]}}
+{"timestamp":"2026-10-12T07:03:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"partial line without closing

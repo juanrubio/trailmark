@@ -1,0 +1,4 @@
+{"type":"summary","sessionId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","summary":"Native titled session","leafUuid":"x-1"}
+{"type":"user","sessionId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","timestamp":"2026-10-13T08:00:00Z","cwd":"/work/titled","uuid":"u-1","isSidechain":true,"message":{"role":"user","content":"Investigate the titled work"}}
+{"type":"assistant","sessionId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","timestamp":"2026-10-13T08:05:00Z","cwd":"/work/titled","uuid":"a-1","isSidechain":true,"message":{"role":"assistant","content":"Truncated reply follows"}}
+{"type":"assistant","sessionId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","timestamp":"2026-10-13T08:06

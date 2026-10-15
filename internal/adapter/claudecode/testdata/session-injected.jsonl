@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"injected-1","timestamp":"2026-10-14T09:00:00Z","cwd":"/work/injected","uuid":"u-0","isMeta":true,"message":{"role":"user","content":"<system-reminder>Injected setup text</system-reminder>"}}
+{"type":"user","sessionId":"injected-1","timestamp":"2026-10-14T09:01:00Z","cwd":"/work/injected","uuid":"u-1","message":{"role":"user","content":"Real task after setup"}}
+{"type":"assistant","sessionId":"injected-1","timestamp":"2026-10-14T09:02:00Z","cwd":"/work/injected","uuid":"a-1","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"go test ./internal/upload"}}]}}

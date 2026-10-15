@@ -4,7 +4,7 @@ A local, keyboard-first TUI for remembering recent coding-agent work and decidin
 
 See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area.
 
-**Status:** requirements drafted; implementation not started. The project name has not been cleared.
+**Status:** Phase 1 implemented — launch interface, Claude Code and Codex adapters, and the local SQLite index. The TUI screens follow in later phases. The project name has not been cleared.
 
 ## Core workflows
 
@@ -41,7 +41,7 @@ Go, using the Charm TUI stack described in the PRD: Bubble Tea v2, Bubbles, and 
 
 ## Development
 
-The repository is currently docs-first. The Makefile targets assume implementation files will be added under cmd/trailmark.
+`make check` runs vet and tests; `make build` builds `./trailmark`. Provider contracts are recorded in [docs/providers.md](docs/providers.md), and configuration and data locations in [docs/configuration.md](docs/configuration.md).
 
 ## License
 
