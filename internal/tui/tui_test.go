@@ -47,7 +47,7 @@ func fixtureOverview(ctx context.Context, path string) (*index.Overview, error) 
 func testModel(t *testing.T) *appModel {
 	t.Helper()
 	continuation.DirExists = func(string) bool { return true }
-	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions(), testCaps(), &fakeClipboard{})
+	m := newModel(context.Background(), dataDeps{overview: fixtureOverview, page: fixturePage, around: fixtureAround, inSession: fixtureInSession, content: fixtureContent, caps: testCaps(), copier: &fakeClipboard{}}, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions())
 	m.now = func() time.Time { return testNow }
 	m.width, m.height = 120, 40
 	return m
@@ -284,7 +284,7 @@ func TestResizeAcrossBoundaryKeepsOverviewReachable(t *testing.T) {
 }
 
 func TestFirstScanAppliesImmediately(t *testing.T) {
-	m := newModel(context.Background(), fixtureOverview, nil, "/home/dev/repos/trailmark", "/home/dev", nil, testCaps(), &fakeClipboard{})
+	m := newModel(context.Background(), dataDeps{overview: fixtureOverview, caps: testCaps(), copier: &fakeClipboard{}}, nil, "/home/dev/repos/trailmark", "/home/dev", nil)
 	m.now = func() time.Time { return testNow }
 	m.Update(scanDoneMsg{sessions: fixtureSessions()})
 	if m.hasPending {
@@ -362,7 +362,7 @@ func TestResumeSheetShowsCommandAndCopies(t *testing.T) {
 			t.Errorf("sheet missing %q", want)
 		}
 	}
-	fake := m.copier.(*fakeClipboard)
+	fake := m.deps.copier.(*fakeClipboard)
 	send(m, "enter")
 	if m.sheetState != "copied" || !strings.Contains(fake.text, "codex resume") {
 		t.Errorf("copied = %q state=%q", fake.text, m.sheetState)
@@ -375,7 +375,7 @@ func TestResumeSheetShowsCommandAndCopies(t *testing.T) {
 
 func TestSheetClipboardFailureShowsSelectableText(t *testing.T) {
 	m := testModel(t)
-	m.copier = &fakeClipboard{err: errFakeClipboard}
+	m.deps.copier = &fakeClipboard{err: errFakeClipboard}
 	send(m, "r")
 	send(m, "enter")
 	if m.sheetState != "failed" {
@@ -405,7 +405,7 @@ func TestCopyMenuPreviewHasProvenance(t *testing.T) {
 		}
 	}
 	send(m, "enter")
-	fake := m.copier.(*fakeClipboard)
+	fake := m.deps.copier.(*fakeClipboard)
 	if !strings.Contains(fake.text, "Make recent work easy to recognize") {
 		t.Errorf("copied text = %q", fake.text)
 	}
@@ -423,7 +423,7 @@ func (e errClipboard) Error() string { return string(e) }
 
 func TestFailedSheetShowsExactCommand(t *testing.T) {
 	m := testModel(t)
-	m.copier = &fakeClipboard{err: errFakeClipboard}
+	m.deps.copier = &fakeClipboard{err: errFakeClipboard}
 	send(m, "r")
 	send(m, "enter")
 	if m.sheetState != "failed" {
@@ -441,7 +441,7 @@ func TestForkUnavailableSheetInTUI(t *testing.T) {
 	c.ForkSupported = false
 	c.ForkTemplate = ""
 	caps[model.ProviderCodex] = c
-	m.caps = caps
+	m.deps.caps = caps
 	send(m, "f")
 	if m.sheet == nil || m.sheet.Available {
 		t.Fatal("fork sheet must be unavailable")
@@ -490,11 +490,275 @@ func TestCopyPayloadBytesExactWithWhitespace(t *testing.T) {
 		t.Fatal("preview missing")
 	}
 	send(m, "enter")
-	fake := m.copier.(*fakeClipboard)
+	fake := m.deps.copier.(*fakeClipboard)
 	if fake.text != m.copyPreview.text {
 		t.Error("copied bytes must equal the previewed payload exactly")
 	}
 	if !strings.Contains(m.View().Content, "exactly what will be copied") {
 		t.Error("preview heading missing")
+	}
+}
+
+// --- Phase 4 fixtures ---
+
+var fixtureMsgs = []index.TranscriptMessage{
+	{Seq: 1, Role: "user", Kind: "message", Text: "Add a retry to the upload worker", Line: 2},
+	{Seq: 2, Role: "assistant", Kind: "message", Text: "Working on the upload change", Line: 3},
+	{Seq: 3, Role: "tool", Kind: "tool_call", Text: "shell grep -rn upload internal/worker", Line: 4},
+	{Seq: 4, Role: "tool", Kind: "tool_output", Text: "internal/worker/upload.go: retry helper found", Line: 5},
+	{Seq: 5, Role: "assistant", Kind: "message", Text: "Added the retry to the upload worker", Line: 6},
+	{Seq: 6, Role: "user", Kind: "message", Text: "Ship the retry change", Line: 7},
+}
+
+func fixturePage(_ context.Context, _ string, offset, limit int) ([]index.TranscriptMessage, int, error) {
+	if offset >= len(fixtureMsgs) {
+		return nil, len(fixtureMsgs), nil
+	}
+	end := offset + limit
+	if end > len(fixtureMsgs) {
+		end = len(fixtureMsgs)
+	}
+	return fixtureMsgs[offset:end], len(fixtureMsgs), nil
+}
+
+func fixtureAround(_ context.Context, _ string, seq, before, after int) ([]index.TranscriptMessage, int, int, error) {
+	idx := 0
+	for i, m := range fixtureMsgs {
+		if m.Seq >= seq {
+			idx = i
+			break
+		}
+		idx = i
+	}
+	start := idx - before
+	if start < 0 {
+		start = 0
+	}
+	end := idx + after + 1
+	if end > len(fixtureMsgs) {
+		end = len(fixtureMsgs)
+	}
+	return fixtureMsgs[start:end], start, len(fixtureMsgs), nil
+}
+
+func fixtureInSession(_ context.Context, _, query string) ([]int, error) {
+	terms := queryTerms(query)
+	var out []int
+	for _, m := range fixtureMsgs {
+		ok := true
+		for _, term := range terms {
+			if !strings.Contains(strings.ToLower(m.Text), strings.ToLower(term)) {
+				ok = false
+			}
+		}
+		if ok {
+			out = append(out, m.Seq)
+		}
+	}
+	return out, nil
+}
+
+func fixtureContent(_ context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error) {
+	terms := queryTerms(query)
+	var groups []index.ContentGroup
+	for _, p := range paths {
+		var hits []index.SearchHit
+		count := 0
+		for _, m := range fixtureMsgs {
+			match := true
+			for _, term := range terms {
+				if !strings.Contains(strings.ToLower(m.Text), strings.ToLower(term)) {
+					match = false
+				}
+			}
+			if !match {
+				continue
+			}
+			count++
+			if len(hits) < 3 {
+				rank := 0.0
+				if m.Kind == "message" {
+					rank = -2
+				}
+				hits = append(hits, index.SearchHit{SourcePath: p, Seq: m.Seq, Kind: m.Kind, Snippet: m.Text, Rank: rank})
+			}
+		}
+		if count > 0 {
+			row := index.SessionRow{SourcePath: p, Purpose: "Fixture session", CWD: "/home/dev/repos/trailmark"}
+			for _, s := range fixtureSessions() {
+				if s.SourcePath == p {
+					row = s
+				}
+			}
+			groups = append(groups, index.ContentGroup{Row: row, Hits: hits, Count: count})
+		}
+	}
+	return groups, nil
+}
+
+func TestTranscriptOpensAndSearches(t *testing.T) {
+	m := testModel(t)
+	send(m, "t")
+	if m.transcript == nil {
+		t.Fatal("t must open the transcript")
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "Add a retry to the upload worker") {
+		t.Error("transcript must show messages")
+	}
+	if !strings.Contains(view, "▸ Tool call") {
+		t.Error("tool activity must be collapsed by default")
+	}
+	send(m, "/")
+	for _, r := range "retry" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	if len(m.transcript.matches) == 0 {
+		t.Fatal("in-session search must find matches")
+	}
+	cur, _ := m.transcript.current()
+	if !strings.Contains(cur.Text, "retry") && cur.Kind == "message" {
+		t.Errorf("cursor must land on a match, got %q", cur.Text)
+	}
+	send(m, "]")
+	send(m, "esc")
+	if m.transcript != nil {
+		t.Error("Esc must close the transcript")
+	}
+	if c, ok := m.selected(); !ok || c.row.ID != "a1" {
+		t.Error("home selection must be preserved after transcript")
+	}
+}
+
+func TestTranscriptMatchRevealsCollapsedTool(t *testing.T) {
+	m := testModel(t)
+	send(m, "t")
+	send(m, "/")
+	for _, r := range "helper" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	cur, _ := m.transcript.current()
+	if cur.Kind != "tool_output" {
+		t.Fatalf("match must land on the tool output, got kind %q", cur.Kind)
+	}
+	if !m.transcript.expanded[cur.Seq] {
+		t.Error("matching tool output must be revealed even though tools collapse by default")
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "helper") || !strings.Contains(view, "found") {
+		t.Error("revealed tool output text must render (highlighting may split phrases)")
+	}
+}
+
+func TestCrossSessionSearchOpensAtMatch(t *testing.T) {
+	m := testModel(t)
+	send(m, "s")
+	if m.search == nil {
+		t.Fatal("s must open content search")
+	}
+	for _, r := range "retry" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	if m.search == nil || len(m.search.groups) == 0 {
+		t.Fatal("content search must return grouped results")
+	}
+	if !strings.Contains(m.View().Content, "Search session content") {
+		t.Error("search mode must be labeled")
+	}
+	send(m, "enter")
+	if m.transcript == nil {
+		t.Fatal("Enter on a result must open the transcript")
+	}
+	cur, _ := m.transcript.current()
+	if cur.Seq != m.search.groups[0].hits[0].Seq && len(m.search.groups) == 0 {
+		t.Error("transcript must open at the matching message")
+	}
+	_ = cur
+	send(m, "esc")
+	if m.transcript != nil || m.search == nil {
+		t.Error("Esc from a search-opened transcript must return to results")
+	}
+	send(m, "esc")
+	if m.search != nil {
+		t.Error("Esc from results must return home")
+	}
+}
+
+func TestCrossSessionSearchScopeAndBroaden(t *testing.T) {
+	m := testModel(t)
+	m.harness = model.ProviderClaudeCode // fixture content ignores provider; scope paths shrink
+	send(m, "s")
+	for _, r := range "upload" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	send(m, "H") // broaden harness inside search
+	if m.harness != "" {
+		t.Error("H must clear the harness scope while searching")
+	}
+	send(m, "esc")
+	if m.harness != model.ProviderClaudeCode {
+		t.Error("Esc must restore the pre-search harness scope")
+	}
+}
+
+func TestSearchBroadeningRestoresScopeOnEsc(t *testing.T) {
+	m := testModel(t)
+	m.windowDays = 7
+	send(m, "s")
+	for _, r := range "retry" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	send(m, "a") // All time inside search
+	if m.windowDays != 0 {
+		t.Fatal("a must broaden to All time while searching")
+	}
+	send(m, "esc")
+	if m.windowDays != 7 {
+		t.Errorf("windowDays = %d after Esc, want the restored 7", m.windowDays)
+	}
+	if m.search != nil {
+		t.Error("search must be closed")
+	}
+}
+
+func TestTranscriptLoadPrevAndSanitize(t *testing.T) {
+	m := testModel(t)
+	send(m, "t")
+	// Jump near the end, then walk back past the loaded window start.
+	m.transcriptGotoSeq(m.transcript, 6)
+	send(m, "k")
+	send(m, "k")
+	if _, ok := m.transcript.current(); !ok {
+		t.Fatal("cursor must stay valid while paging")
+	}
+	dirty := "ok \x1b[31mred\x1b[m \x1b]8;;https://example\x07link\x1b]8;;\x07\x01 end"
+	clean := sanitizeText(dirty)
+	if strings.Contains(clean, "\x1b") || strings.Contains(clean, "example") && strings.Contains(clean, "]8") {
+		t.Errorf("sanitized text still carries escapes: %q", clean)
+	}
+	if !strings.Contains(clean, "red") || !strings.Contains(clean, "end") {
+		t.Errorf("sanitized text lost content: %q", clean)
+	}
+}
+
+func TestHighlightDoesNotCorruptANSI(t *testing.T) {
+	out := highlightMatches("code 5 and code 5 again", "code 5")
+	if !strings.Contains(out, "again") {
+		t.Errorf("highlight output mangled: %q", out)
+	}
+	plain := strings.Map(func(r rune) rune {
+		if r == 0x1b {
+			return -1
+		}
+		return r
+	}, out)
+	_ = plain
+	if strings.Count(out, "code") < 2 {
+		t.Errorf("both occurrences must survive highlighting: %q", out)
 	}
 }

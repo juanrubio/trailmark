@@ -88,6 +88,12 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case overlayFilter:
 		return m.onFilterKey(msg)
 	}
+	if m.transcript != nil {
+		return m.onTranscriptKey(msg)
+	}
+	if m.search != nil {
+		return m.onSearchKey(msg)
+	}
 	if m.focus == focusOverview || m.overviewOpen {
 		return m.onOverviewKey(s)
 	}
@@ -134,7 +140,9 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 	case "?":
 		m.overlay = overlayHelp
 	case "t":
-		m.notice = "Transcript reading arrives in a later phase."
+		if c, ok := m.selected(); ok {
+			m.openTranscript(c.row, 0, false)
+		}
 	case "r":
 		m.openSheet(continuation.Resume)
 	case "f":
@@ -144,13 +152,36 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 	case "c":
 		m.openCopyMenu()
 	case "s":
-		m.notice = "Content search arrives in a later phase."
+		m.openSearch()
 	}
 	return m, nil
 }
 
 func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 	switch s {
+	case "T":
+		if c, ok := m.selected(); ok {
+			atSeq := 0
+			if m.detail != nil {
+				atSeq = m.detail.Initial.Seq
+			}
+			m.openTranscript(c.row, atSeq, false)
+		}
+		return m, nil
+	case "t":
+		if c, ok := m.selected(); ok {
+			atSeq := 0
+			if m.detail != nil && m.detail.LatestUserEx.Seq > 0 {
+				atSeq = m.detail.LatestUserEx.Seq
+			} else if m.detail != nil && m.detail.Initial.Seq > 0 {
+				atSeq = m.detail.Initial.Seq
+			}
+			m.openTranscript(c.row, atSeq, false)
+		}
+		return m, nil
+	case "s":
+		m.openSearch()
+		return m, nil
 	case "r":
 		m.openSheet(continuation.Resume)
 		return m, nil
@@ -274,11 +305,11 @@ func (m *appModel) refreshDetail() {
 	if m.detailFor == c.row.SourcePath && m.detail != nil {
 		return
 	}
-	if m.overview == nil {
+	if m.deps.overview == nil {
 		m.detail = nil
 		return
 	}
-	ov, err := m.overview(m.ctx, c.row.SourcePath)
+	ov, err := m.deps.overview(m.ctx, c.row.SourcePath)
 	if err != nil {
 		m.detail = nil
 		m.detailFor = ""
@@ -417,7 +448,7 @@ func (m *appModel) openSheet(action continuation.Action) {
 	if !ok {
 		return
 	}
-	capability := m.caps[c.row.Provider]
+	capability := m.deps.caps[c.row.Provider]
 	prepared := continuation.Prepare(action, capability, c.row.Provider, c.row.ID, c.row.CWD, c.row.Purpose)
 	m.sheet = &prepared
 	m.sheetState = ""
@@ -437,8 +468,8 @@ func (m *appModel) onSheetKey(s string) (tea.Model, tea.Cmd) {
 		m.overlay = overlayNone
 		m.sheet = nil
 	case "enter", "c":
-		if m.sheet != nil && m.sheet.Available && m.copier != nil {
-			if err := m.copier.Copy(m.sheet.Command); err != nil {
+		if m.sheet != nil && m.sheet.Available && m.deps.copier != nil {
+			if err := m.deps.copier.Copy(m.sheet.Command); err != nil {
 				m.sheetState = "failed"
 			} else {
 				m.sheetState = "copied"
@@ -483,6 +514,7 @@ func (m *appModel) onCopyMenuKey(s string) (tea.Model, tea.Cmd) {
 			m.copyPreview = &item
 			m.copyState = ""
 			m.copyScroll = 0
+			m.copyReturn = "menu"
 			m.overlay = overlayCopyPreview
 		}
 	}
@@ -498,12 +530,16 @@ func (m *appModel) onCopyPreviewKey(s string) (tea.Model, tea.Cmd) {
 			m.copyScroll--
 		}
 	case "esc":
-		m.overlay = overlayCopyMenu
+		if m.copyReturn == "transcript" {
+			m.overlay = overlayNone
+		} else {
+			m.overlay = overlayCopyMenu
+		}
 	case "q":
 		m.overlay = overlayNone
 	case "enter", "c":
-		if m.copyPreview != nil && m.copier != nil {
-			if err := m.copier.Copy(m.copyPreview.text); err != nil {
+		if m.copyPreview != nil && m.deps.copier != nil {
+			if err := m.deps.copier.Copy(m.copyPreview.text); err != nil {
 				m.copyState = "failed"
 			} else {
 				m.copyState = "copied"

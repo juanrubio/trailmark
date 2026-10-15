@@ -55,13 +55,26 @@ type scanDoneMsg struct {
 // overviewFunc loads detail for one session by source path.
 type overviewFunc func(ctx context.Context, sourcePath string) (*index.Overview, error)
 
-type appModel struct {
-	ctx       context.Context
+// dataDeps bundles the index reads the TUI needs.
+type dataDeps struct {
 	overview  overviewFunc
-	launchDir string
-	home      string
-	now       func() time.Time
-	scanCmd   tea.Cmd // background refresh command, may be nil
+	page      func(ctx context.Context, sourcePath string, offset, limit int) ([]index.TranscriptMessage, int, error)
+	around    func(ctx context.Context, sourcePath string, seq, before, after int) ([]index.TranscriptMessage, int, int, error)
+	inSession func(ctx context.Context, sourcePath, query string) ([]int, error)
+	content   func(ctx context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error)
+	caps      map[model.Provider]model.Capability
+	copier    clipboard.Copier
+}
+
+type appModel struct {
+	ctx        context.Context
+	deps       dataDeps
+	transcript *transcriptState
+	search     *searchState
+	launchDir  string
+	home       string
+	now        func() time.Time
+	scanCmd    tea.Cmd // background refresh command, may be nil
 
 	width, height int
 	sessions      []index.SessionRow
@@ -99,13 +112,14 @@ type appModel struct {
 	copyPreview *copyItem
 	copyState   string // "", "copied", "failed"
 	copyScroll  int
+	copyReturn  string // "menu" or "transcript"
 	sheetScroll int
 }
 
-func newModel(ctx context.Context, overview overviewFunc, scanCmd tea.Cmd, launchDir, home string, sessions []index.SessionRow, caps map[model.Provider]model.Capability, copier clipboard.Copier) *appModel {
+func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, home string, sessions []index.SessionRow) *appModel {
 	m := &appModel{
 		ctx:        ctx,
-		overview:   overview,
+		deps:       deps,
 		launchDir:  launchDir,
 		home:       home,
 		now:        time.Now,
@@ -114,8 +128,6 @@ func newModel(ctx context.Context, overview overviewFunc, scanCmd tea.Cmd, launc
 		windowDays: 7,
 		expanded:   map[string]bool{},
 	}
-	m.caps = caps
-	m.copier = copier
 	m.partialCount = countPartial(sessions)
 	m.refreshDetail()
 	return m

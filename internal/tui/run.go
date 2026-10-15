@@ -45,11 +45,19 @@ func Run(ctx context.Context, deps Deps) error {
 		}
 		return scanDoneMsg{sessions: fresh, failedRoots: stats.FailedRoots}
 	}
-	caps := map[model.Provider]model.Capability{
-		model.ProviderClaudeCode: claudecode.Adapter{}.Capability(),
-		model.ProviderCodex:      codex.Adapter{}.Capability(),
+	d := dataDeps{
+		overview:  deps.Index.Overview,
+		page:      deps.Index.TranscriptPage,
+		around:    deps.Index.TranscriptAround,
+		inSession: deps.Index.SearchInSession,
+		content:   deps.Index.SearchContentScoped,
+		caps: map[model.Provider]model.Capability{
+			model.ProviderClaudeCode: claudecode.Adapter{}.Capability(),
+			model.ProviderCodex:      codex.Adapter{}.Capability(),
+		},
+		copier: clipboard.System{},
 	}
-	m := newModel(ctx, deps.Index.Overview, scanCmd, launchDir, home, sessions, caps, clipboard.System{})
+	m := newModel(ctx, d, scanCmd, launchDir, home, sessions)
 	p := tea.NewProgram(m, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("run TUI: %w", err)

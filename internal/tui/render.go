@@ -36,6 +36,10 @@ func (m *appModel) View() tea.View {
 		content = m.viewCopyMenu(w, h)
 	case m.overlay == overlayCopyPreview:
 		content = m.viewCopyPreview(w, h)
+	case m.transcript != nil:
+		content = m.viewTranscript(w, h)
+	case m.search != nil:
+		content = m.viewSearch(w, h)
 	case m.overviewOpen:
 		content = m.viewOverviewPage(w, h)
 	default:
@@ -108,7 +112,7 @@ func (m *appModel) renderFooter(w int) string {
 		return strings.Join(lines, "\n")
 	}
 	if w >= 110 {
-		hints := "↑↓/jk Select  Enter Overview  p Project  w When  h Harness  / Filter  t Transcript  ? Help  q Quit"
+		hints := "↑↓/jk Select  Enter Overview  p Project  w When  h Harness  / Filter  t Transcript  s Search  ? Help  q Quit"
 		lines = append(lines, truncate(hints, w))
 	} else {
 		lines = append(lines,
@@ -313,7 +317,9 @@ func (m *appModel) viewHelp(w, h int) string {
 		"/            Filter purpose, project, path, provider",
 		"e            Expand or collapse child sessions",
 		"R            Apply refreshed session ordering",
-		"t            Transcript (later phase)",
+		"t            Transcript at the latest exchange",
+		"T            Transcript at the initial request",
+		"s            Search session content",
 		"r / f / n    Resume, fork, clean session",
 		"c            Copy directory or session context",
 		"s            Content search (later phase)",

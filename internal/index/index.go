@@ -293,6 +293,7 @@ func (ix *Index) ListSessions(ctx context.Context, limit int) ([]SessionRow, err
 // source locator needed for provenance when copying.
 type Excerpt struct {
 	Text      string
+	Seq       int
 	Line      int
 	RecordID  string
 	Timestamp *time.Time
@@ -359,7 +360,7 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 		return nil, fmt.Errorf("load overview messages %s: %w", sourcePath, err)
 	}
 	excerpt := func(u userMsg) Excerpt {
-		e := Excerpt{Text: u.text, Line: u.line, RecordID: u.rec}
+		e := Excerpt{Text: u.text, Seq: int(u.seq), Line: u.line, RecordID: u.rec}
 		if u.ts.Valid {
 			t := time.Unix(u.ts.Int64, 0)
 			e.Timestamp = &t
@@ -380,7 +381,7 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 	asst := func(query string, args ...any) Excerpt {
 		var e Excerpt
 		var ts sql.NullInt64
-		if err := ix.db.QueryRowContext(ctx, query, args...).Scan(&e.Text, &e.Line, &e.RecordID, &ts); err != nil {
+		if err := ix.db.QueryRowContext(ctx, query, args...).Scan(&e.Text, &e.Seq, &e.Line, &e.RecordID, &ts); err != nil {
 			return Excerpt{}
 		}
 		if ts.Valid {
@@ -392,10 +393,10 @@ func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, er
 	if latestUser != nil {
 		o.LatestUser = latestUser.text
 		o.LatestUserEx = excerpt(*latestUser)
-		o.LatestAsstEx = asst(`SELECT text, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' AND seq > ? ORDER BY seq DESC LIMIT 1`, sourcePath, latestUser.seq)
+		o.LatestAsstEx = asst(`SELECT text, seq, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' AND seq > ? ORDER BY seq DESC LIMIT 1`, sourcePath, latestUser.seq)
 		o.LatestAssistant = o.LatestAsstEx.Text
 	} else {
-		o.LatestAsstEx = asst(`SELECT text, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' ORDER BY seq DESC LIMIT 1`, sourcePath)
+		o.LatestAsstEx = asst(`SELECT text, seq, line, record_id, ts FROM messages WHERE source_path = ? AND role = 'assistant' AND kind = 'message' ORDER BY seq DESC LIMIT 1`, sourcePath)
 		o.LatestAssistant = o.LatestAsstEx.Text
 	}
 	return &o, nil
