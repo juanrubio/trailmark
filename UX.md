@@ -192,7 +192,7 @@ Show only relevant keys in each view, with full help available through `?`. A fo
 | `c` | Copy menu: directory or available context. | Copy selected message/exchange with provenance. |
 | `e` | Expand/collapse explicit child sessions for selected parent. | No action. |
 | `R` | Refresh and apply the latest session ordering. | Refresh available from home after returning. |
-| `,` | Sources/settings: theme, roots, exclusions, scan status, cache controls. | Return to home for settings. |
+| `,` | Sources/settings: theme, roots, exclusions, scan status, database size, cache controls. | Return to home for settings. |
 | `?` | Contextual help. | Contextual help. |
 | `q` | Ask to quit from home; close a nested overview first. | Return from the reading/search view. |
 

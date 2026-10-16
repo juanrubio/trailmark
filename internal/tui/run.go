@@ -129,9 +129,8 @@ func (b *settingsBackend) Status(ctx context.Context) (SettingsStatus, error) {
 	} else if at, ok, err := b.scanner.LastScanAt(ctx); err == nil && ok {
 		st.LastScan = at
 	}
-	if path, err := config.IndexPath(); err == nil {
-		st.IndexPath = path
-	}
+	st.IndexPath = b.ix.Path()
+	st.DatabaseBytes, st.DatabaseSizeKnown = databaseFileSize(st.IndexPath)
 	return st, nil
 }
 
@@ -283,4 +282,26 @@ func (b *settingsBackend) SetTheme(name string) error {
 		return err
 	}
 	return nil
+}
+
+// databaseFileSize includes SQLite's active WAL/shared-memory sidecars without
+// checkpointing or otherwise modifying the database. Optional missing files
+// contribute zero; any other stat failure leaves the measurement unavailable.
+func databaseFileSize(path string) (int64, bool) {
+	main, err := os.Stat(path)
+	if err != nil || !main.Mode().IsRegular() {
+		return 0, false
+	}
+	total := main.Size()
+	for _, suffix := range []string{"-wal", "-shm"} {
+		info, err := os.Stat(path + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			return 0, false
+		}
+		total += info.Size()
+	}
+	return total, true
 }

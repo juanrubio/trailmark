@@ -195,3 +195,14 @@ save failure preserving the prior choice, and changing themes without a
 rescan. Rendering tests cover all three themes in light/dark modes at
 144×40, 80×24, and 40×12, including transcript and chooser gutters and
 NO_COLOR/dumb behavior. `make check build` passed; the binary was rebuilt.
+
+
+### Database size in settings
+
+Sources and Settings now shows a human-readable database size beneath the
+opened index path. Tests verify aggregation of the main SQLite file and
+existing WAL/shared-memory sidecars, absent optional files, unavailable
+measurements, unit formatting, and the displayed value. A temporary SQLite
+integration test checks that measurement uses the actual opened database
+even when the configured data directory differs, and that reloading
+settings refreshes availability. `make check build` passed.

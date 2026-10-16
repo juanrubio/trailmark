@@ -63,6 +63,13 @@ The index lives at `$XDG_DATA_HOME/trailmark/index.db` (usually
 the data directory. The directory is created `0700` and the database
 file `0600`.
 
+**Sources and settings** (`,`) shows the index path and **Database size**
+in B, KiB, MiB, or GiB. The size sums the current database file and any
+SQLite WAL/shared-memory sidecars, so it includes pending writes. It is
+refreshed when settings opens or reloads after a scan or cache operation.
+If the database cannot be inspected, the size is shown as unavailable;
+reading the size does not checkpoint or modify the database.
+
 The index is a rebuildable cache of excerpted transcript text and is
 as sensitive as the logs it derives from. Deleting the data
 directory clears it completely; source logs and configuration are

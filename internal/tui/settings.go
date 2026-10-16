@@ -24,11 +24,13 @@ type RootInfo struct {
 
 // SettingsStatus summarizes index coverage for the settings view.
 type SettingsStatus struct {
-	Indexed   int
-	Partial   int
-	Excluded  int
-	IndexPath string
-	LastScan  string
+	Indexed           int
+	Partial           int
+	Excluded          int
+	DatabaseBytes     int64
+	DatabaseSizeKnown bool
+	IndexPath         string
+	LastScan          string
 }
 
 // settingsStore is the settings backend the TUI drives. Mutations
@@ -389,6 +391,11 @@ func (m *appModel) viewSettings(w, h int) string {
 	if st.settings.IndexPath != "" {
 		lines = append(lines, "Index: "+st.settings.IndexPath)
 	}
+	size := "Unavailable"
+	if st.settings.DatabaseSizeKnown {
+		size = formatDatabaseSize(st.settings.DatabaseBytes)
+	}
+	lines = append(lines, wrap(m.styles().path.Render("Database size: "+size), w)...)
 	lines = append(lines, "", m.styles().heading.Render("Roots and actions"))
 	cursorLine := 0
 	for i, item := range st.items {
@@ -442,4 +449,18 @@ func (m *appModel) viewSettings(w, h int) string {
 	footer := m.rule(w) + "\n" + m.footerLines(lines[footerStart:], w)
 	bodyH := max(1, h-lipgloss.Height(footer))
 	return fitPane(windowLines(lines[:footerStart], cursorLine, bodyH), w, bodyH) + "\n" + footer
+}
+
+func formatDatabaseSize(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	value := float64(bytes)
+	for _, unit := range []string{"KiB", "MiB", "GiB"} {
+		value /= 1024
+		if value < 1024 || unit == "GiB" {
+			return fmt.Sprintf("%.1f %s", value, unit)
+		}
+	}
+	return "Unavailable"
 }

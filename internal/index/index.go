@@ -25,7 +25,8 @@ const ParserVersion = 2
 
 // Index is the derived-data store.
 type Index struct {
-	db *sql.DB
+	path string
+	db   *sql.DB
 }
 
 // Open creates or opens the index at path with user-only permissions.
@@ -41,7 +42,7 @@ func Open(path string) (*Index, error) {
 		return nil, fmt.Errorf("open index %s: %w", path, err)
 	}
 	db.SetMaxOpenConns(1)
-	ix := &Index{db: db}
+	ix := &Index{db: db, path: path}
 	if err := ix.migrate(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -52,6 +53,9 @@ func Open(path string) (*Index, error) {
 	}
 	return ix, nil
 }
+
+// Path returns the opened database file path.
+func (ix *Index) Path() string { return ix.path }
 
 // Close releases the database handle.
 func (ix *Index) Close() error { return ix.db.Close() }
