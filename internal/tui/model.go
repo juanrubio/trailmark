@@ -190,6 +190,7 @@ func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, ho
 	}
 	m.initialStarted = m.now()
 	m.partialCount = countPartial(sessions)
+	m.applyLaunchProjectDefault()
 	m.chooseAutomaticWindow()
 	m.refreshDetail()
 	return m

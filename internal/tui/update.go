@@ -93,6 +93,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// so discovered cards appear immediately.
 			m.sessions = msg.sessions
 			m.pending, m.hasPending = nil, false
+			m.applyLaunchProjectDefault()
 			m.chooseAutomaticWindow()
 			m.partialCount = countPartial(m.sessions)
 			m.clampSelection()

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,8 +36,14 @@ func TestAutomaticWindowStartup(t *testing.T) {
 			if !tc.empty && len(m.visibleSessions()) == 0 {
 				t.Fatal("startup still empty")
 			}
-			if m.project != "" {
-				t.Fatal("startup changed default project scope")
+			// Launch defaults to the project containing the
+			// launch directory when it has recorded sessions.
+			want := "current"
+			if tc.empty {
+				want = ""
+			}
+			if m.project != want {
+				t.Fatalf("startup project = %q, want %q", m.project, want)
 			}
 		})
 	}
@@ -127,6 +135,69 @@ func TestAutomaticWindowProjectHarnessIntersectionAndReturn(t *testing.T) {
 	choose(selectorProject, "/fictional/recent")
 	if m.windowDays != 7 || len(m.visibleSessions()) != 1 {
 		t.Fatal("returning to a recent scope did not restore seven days")
+	}
+}
+
+func TestLaunchProjectDefault(t *testing.T) {
+	when := time.Now()
+	rows := []index.SessionRow{
+		{SourcePath: "/fictional/here", ID: "here", CWD: "/fictional/project", LastActivity: &when},
+		{SourcePath: "/fictional/else", ID: "else", CWD: "/fictional/other", LastActivity: &when},
+	}
+	// Inside a project with sessions: scoped to it.
+	m := newModel(context.Background(), dataDeps{}, nil, "/fictional/project", "/fictional", rows)
+	if m.project != "current" || len(m.visibleSessions()) != 1 || m.visibleSessions()[0].ID != "here" {
+		t.Fatalf("launch in project: project=%q visible=%d", m.project, len(m.visibleSessions()))
+	}
+	// Outside any known project: All projects.
+	m = newModel(context.Background(), dataDeps{}, nil, "/fictional/nowhere", "/fictional", rows)
+	if m.project != "" || len(m.visibleSessions()) != 2 {
+		t.Fatalf("launch elsewhere: project=%q visible=%d", m.project, len(m.visibleSessions()))
+	}
+	// From a subdirectory of a Git worktree: scoped to the root.
+	gitRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gitRoot, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(gitRoot, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRows := []index.SessionRow{
+		{SourcePath: "/fictional/here", ID: "here", CWD: gitRoot, LastActivity: &when},
+		{SourcePath: "/fictional/else", ID: "else", CWD: "/fictional/other", LastActivity: &when},
+	}
+	m = newModel(context.Background(), dataDeps{}, nil, filepath.Join(gitRoot, "sub"), "/fictional", gitRows)
+	if m.project != "current" || len(m.visibleSessions()) != 1 {
+		t.Fatalf("worktree subdir: project=%q visible=%d", m.project, len(m.visibleSessions()))
+	}
+	// A Git worktree with no sessions of its own keeps All projects.
+	emptyRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(emptyRoot, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m = newModel(context.Background(), dataDeps{}, nil, emptyRoot, "/fictional", rows)
+	if m.project != "" {
+		t.Fatalf("empty worktree must keep All projects, got %q", m.project)
+	}
+	// A current project with only older sessions widens the
+	// window inside that project rather than leaking others.
+	old := when.AddDate(0, 0, -15)
+	rows[0].LastActivity = &old
+	m = newModel(context.Background(), dataDeps{}, nil, "/fictional/project", "/fictional", rows)
+	if m.project != "current" || m.windowDays != 30 || len(m.visibleSessions()) != 1 {
+		t.Fatalf("older current project: project=%q window=%d visible=%d", m.project, m.windowDays, len(m.visibleSessions()))
+	}
+}
+
+func TestLaunchProjectDefaultAfterFirstScan(t *testing.T) {
+	when := time.Now()
+	m := newModel(context.Background(), dataDeps{}, nil, "/home/dev/repos/trailmark", "/home/dev", nil)
+	m.Update(scanDoneMsg{sessions: []index.SessionRow{
+		{SourcePath: "/fictional/here", ID: "here", CWD: "/home/dev/repos/trailmark", LastActivity: &when},
+		{SourcePath: "/fictional/else", ID: "else", CWD: "/home/dev/other", LastActivity: &when},
+	}})
+	if m.project != "current" || len(m.visibleSessions()) != 1 {
+		t.Fatalf("first scan: project=%q visible=%d", m.project, len(m.visibleSessions()))
 	}
 }
 

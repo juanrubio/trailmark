@@ -25,7 +25,7 @@ Download the binary for your platform from the [latest release](https://github.c
 
 - Linux first, with macOS release binaries; native Claude Code and Codex session logs and memory stores.
 - Choose how much history to index on first launch, then follow a dedicated progress screen. Press Esc to stop and browse sessions already saved; later launches open cached sessions immediately while refreshing in the background.
-- Launch `trailmark` into the last seven days, grouped by day and ordered by last session activity. If that scope is empty, automatically try 30 days, then All time, to show available history.
+- Launch `trailmark` into the last seven days of the project you are in — when it has recorded sessions — grouped by day and ordered by last session activity; launched elsewhere it shows all projects. If that scope is empty, automatically try 30 days, then All time, to show available history. `p` switches scope at any time.
 - Use the time selector to show Today, 3 days, 7 days, 30 days, or All time. An explicit time choice stays fixed; otherwise choosing a project or harness automatically finds the smallest populated window from 7 days, 30 days, and All time. The seven-day default does not limit retained history.
 - Choose Green, Blue, Amber, or Monokai in settings (`,` → Theme); the choice is saved and adapts to light/dark terminals.
 - Keep the launch interface to `trailmark`, `--help`, and `--version`; normal operations live inside the TUI.

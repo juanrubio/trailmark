@@ -51,6 +51,12 @@ func testModel(t *testing.T) *appModel {
 	continuation.DirExists = func(string) bool { return true }
 	t.Cleanup(func() { continuation.DirExists = origDirExists })
 	m := newModel(context.Background(), dataDeps{overview: fixtureOverview, page: fixturePage, around: fixtureAround, inSession: fixtureInSession, content: fixtureContent, caps: testCaps(), copier: &fakeClipboard{}}, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions())
+	// Fixtures model an All-projects launch; launch-scope
+	// defaulting has dedicated coverage in automatic_window_test.go.
+	m.project = ""
+	m.chooseAutomaticWindow()
+	m.clampSelection()
+	m.refreshDetail()
 	m.now = func() time.Time { return testNow }
 	m.width, m.height = 120, 40
 	return m

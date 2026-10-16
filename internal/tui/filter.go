@@ -259,6 +259,22 @@ func dayHeading(t *time.Time, now time.Time) string {
 	}
 }
 
+// applyLaunchProjectDefault scopes a fresh launch to the project
+// containing the launch directory when that project has recorded
+// sessions. Without any, the launch keeps All projects so the
+// recent-work overview is not empty for scope alone.
+func (m *appModel) applyLaunchProjectDefault() {
+	if m.project != "" || !m.currentProjectAvailable() {
+		return
+	}
+	for _, row := range m.sessions {
+		if relatedDir(row.CWD, m.currentProjectRoot()) {
+			m.project = "current"
+			return
+		}
+	}
+}
+
 // chooseAutomaticWindow widens the default scope only when its project and
 // harness have no recent work. Text filtering never drives this decision.
 func (m *appModel) chooseAutomaticWindow() {

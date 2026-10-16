@@ -34,6 +34,12 @@ func validationModel(t *testing.T) *appModel {
 	continuation.DirExists = func(string) bool { return true }
 	t.Cleanup(func() { continuation.DirExists = origDirExists })
 	m := newModel(context.Background(), dataDeps{overview: fixtureOverview, page: fixturePage, around: fixtureAround, inSession: fixtureInSession, content: fixtureContent, caps: testCaps(), copier: &fakeClipboard{}}, nil, "/home/dev/repos/trailmark", "/home/dev", validationSessions())
+	// Recognition tasks span projects; model an All-projects
+	// launch (see testModel).
+	m.project = ""
+	m.chooseAutomaticWindow()
+	m.clampSelection()
+	m.refreshDetail()
 	m.now = func() time.Time { return testNow }
 	m.width, m.height = 120, 40
 	return m
