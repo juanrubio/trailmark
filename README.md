@@ -69,6 +69,7 @@ they do not speed up parsing or database writes for files you include.
 - [TUI experience and wireframes](UX.md)
 - [Visual specification](UX.md#8-visual-and-state-rules) — mockup colors, session selection, separators, spacing, and terminal adaptations; [visual acceptance criteria](PRD.md#visual-acceptance).
 - [Interactive TUI concept](docs/mockups/index.html) — open locally in a browser; fictional sessions, with no connection to real logs or agents.
+- [Browser interface plan](docs/web-interface-plan.md) — deferred proposal for HTML pages served by Trailmark; not implemented.
 
 ## Technology direction
 
