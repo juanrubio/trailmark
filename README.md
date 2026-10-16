@@ -1,4 +1,4 @@
-# Trailmark (working title)
+# Trailmark
 
 A local, keyboard-first TUI for remembering recent coding-agent work and deciding how to continue it.
 
