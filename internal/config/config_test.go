@@ -147,7 +147,7 @@ func TestThemeConfigPersistenceAndFallback(t *testing.T) {
 	if cfg.Theme != "green" {
 		t.Fatal("unknown theme did not fall back to Green")
 	}
-	for _, theme := range []string{"blue", "amber", "green"} {
+	for _, theme := range []string{"blue", "amber", "monokai", "green"} {
 		cfg.Theme = theme
 		if err := cfg.Save(); err != nil {
 			t.Fatal(err)

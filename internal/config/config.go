@@ -311,7 +311,7 @@ func Canonical(path string) string {
 // NormalizeTheme keeps absent or unsupported theme names on the default.
 func NormalizeTheme(name string) string {
 	switch name {
-	case "blue", "amber":
+	case "blue", "amber", "monokai":
 		return name
 	default:
 		return "green"

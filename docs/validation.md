@@ -251,3 +251,19 @@ round trip. Codex supplied command summaries in all three and file changes in
 one. Six unrelated Claude telemetry files remained excluded. No private source
 content or live database copy was added to the repository. `make check build`
 passed and rebuilt `./trailmark`.
+
+### Monokai black/white theme
+
+Monokai is the fourth saved theme. Its main surface and outer gutters use
+pure black (`#000000`) in dark mode and pure white (`#ffffff`) in light mode;
+selection and raised surfaces remain distinct. Tests exercise the actual
+fourth picker option, config save/reload, terminal background reports, and
+all four themes at 144×40, 80×24, and 40×12, including no-color behavior.
+Monokai body, secondary, accent, path, warning, selected-text, and search-match
+foreground/background pairs meet a calculated contrast ratio of at least
+4.5:1. This calculation excludes decorative separator lines.
+
+Synthetic ANSI previews of the Overview and recorded work were generated
+for both variants; the black and white 80×24 views were visually inspected.
+Physical-terminal color fidelity remains unverified. `make check build`
+passed and rebuilt `./trailmark`.

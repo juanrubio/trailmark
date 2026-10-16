@@ -51,7 +51,7 @@ type themeStore interface {
 	SetTheme(name string) error
 }
 
-var themeChoices = []struct{ name, label string }{{"green", "Green"}, {"blue", "Blue"}, {"amber", "Amber"}}
+var themeChoices = []struct{ name, label string }{{"green", "Green"}, {"blue", "Blue"}, {"amber", "Amber"}, {"monokai", "Monokai"}}
 
 func themeLabel(name string) string {
 	for _, choice := range themeChoices {

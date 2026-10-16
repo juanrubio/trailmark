@@ -22,6 +22,11 @@ type themeStyles struct{ base, accent, muted, heading, purpose, selected, path, 
 
 func themePalette(name string, light bool) palette {
 	switch config.NormalizeTheme(name) {
+	case "monokai":
+		if light {
+			return palette{"#ffffff", "#272822", "#66665e", "#486b00", "#eef5db", "#006b80", "#c4c4b8", "#f5e8a0", "#272822", "#f5f5f2", "#965000"}
+		}
+		return palette{"#000000", "#f8f8f2", "#a6a69c", "#a6e22e", "#272822", "#66d9ef", "#49483e", "#e6db74", "#191919", "#161616", "#fd971f"}
 	case "blue":
 		if light {
 			return palette{"#f6f9fe", "#20334b", "#52677b", "#215fa0", "#dfebfa", "#246663", "#bccbdc", "#f2dcaa", "#24342d", "#eaf0f9", "#795b20"}

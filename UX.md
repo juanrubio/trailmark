@@ -239,7 +239,8 @@ The 2026-10-16 visual review found that the initial renderer retained the inform
 
 Use a shared semantic palette across all views. **Green** retains the
 original [mockup palette](docs/mockups/index.html) and remains the default;
-**Blue** and **Amber** offer cool and warm alternatives. Choose a theme in
+**Blue** and **Amber** offer cool and warm alternatives. **Monokai** adds
+vivid accents on pure black or white. Choose a theme in
 settings (`,`, Theme, Enter). Enter applies and saves it, while Esc cancels.
 The choice survives restart and changes no session filters or scan state.
 A save failure keeps the prior theme and reports the problem. Each theme
@@ -274,10 +275,21 @@ Use contrasting foreground/background pairs for highlighted matches, not gold te
 | Blue / light | `#f6f9fe` | `#215fa0` | `#dfebfa` | `#246663` | `#795b20` |
 | Amber / dark | `#242019` | `#edc17a` | `#473720` | `#b8d2c2` | `#f0a28b` |
 | Amber / light | `#fdf9f1` | `#845000` | `#f4e4c8` | `#3d6b53` | `#963b2d` |
+| Monokai / dark | `#000000` | `#a6e22e` | `#272822` | `#66d9ef` | `#fd971f` |
+| Monokai / light | `#ffffff` | `#486b00` | `#eef5db` | `#006b80` | `#965000` |
 
 Amber uses peach/terracotta warning colors to distinguish warnings from
 its gold accent. Theme-specific body text, secondary text, raised surfaces,
 and rules complete each palette in `internal/tui/theme.go`.
+
+Monokai is inspired by its namesake rather than a literal editor-theme port.
+Its main surface and outer gutters are `#000000` in dark mode and `#ffffff`
+in light mode. Selection fills and raised headers remain distinct so item
+boundaries are visible. Lime/olive accents, cyan/teal paths, orange warnings,
+and yellow search highlights preserve the established semantic roles. Light
+mode uses darker accent colors for readable contrast on white. The existing
+terminal background report chooses the variant; dark remains the fallback
+when no report arrives. No-color mode leaves background painting disabled.
 
 ### Structure and component treatment
 

@@ -32,11 +32,14 @@ environment variable overrides the config directory.
 
 ## Terminal appearance
 
-Trailmark offers three color themes: **Green** (the original default),
-**Blue**, and **Amber**. Press `,` from the session list, select **Theme**,
+Trailmark offers four color themes: **Green** (the original default),
+**Blue**, **Amber**, and **Monokai**. Press `,` from the session list, select **Theme**,
 and press Enter to choose one. Enter saves and applies the choice; Esc
 cancels. The choice persists in Trailmark's config as `"theme": "green"`,
-`"blue"`, or `"amber"`. Missing or unrecognized values use Green.
+`"blue"`, `"amber"`, or `"monokai"`. Missing or unrecognized values use Green.
+
+Monokai uses a pure black main background in dark mode and pure white in
+light mode, with vivid accents and distinct selected/raised surfaces.
 
 Each theme has dark and light variants. Trailmark asks the terminal for
 its background color and chooses the matching variant, falling back to
