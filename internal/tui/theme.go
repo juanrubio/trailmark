@@ -18,7 +18,7 @@ type palette struct{ panel, text, muted, accent, selection, path, separator, gol
 var darkPalette = palette{"#191e20", "#e5e9e4", "#a2aeae", "#ade6c2", "#253c32", "#b2d3dc", "#364144", "#ddc38c", "#24342d", "#202729", "#ddc38c"}
 var lightPalette = palette{"#fafbf7", "#24342d", "#59685e", "#246941", "#dfeddf", "#315e70", "#c1c9bf", "#f2dcaa", "#24342d", "#eef1e9", "#795b20"}
 
-type themeStyles struct{ base, accent, muted, heading, purpose, selected, path, rule, match, gold, raised lipgloss.Style }
+type themeStyles struct{ base, accent, muted, heading, purpose, selected, path, rule, match, gold, raised, modeBadge lipgloss.Style }
 
 func themePalette(name string, light bool) palette {
 	switch config.NormalizeTheme(name) {
@@ -59,12 +59,15 @@ func newStyles(light, noColor bool, names ...string) themeStyles {
 		}
 		return base.Foreground(lipgloss.Color(hex))
 	}
-	st := themeStyles{gold: fg(p.warning), raised: fg(p.text), base: base, accent: fg(p.accent), muted: fg(p.muted), heading: fg(p.text).Bold(true), purpose: fg(p.text).Bold(true), selected: base.Bold(true), path: fg(p.path), rule: fg(p.separator), match: base.Bold(true)}
+	st := themeStyles{gold: fg(p.warning), raised: fg(p.text), base: base, accent: fg(p.accent), muted: fg(p.muted), heading: fg(p.text).Bold(true), purpose: fg(p.text).Bold(true), selected: base.Bold(true), path: fg(p.path), rule: fg(p.separator), match: base.Bold(true), modeBadge: base.Bold(true)}
 	if !noColor {
 		st.base = fg(p.text).Background(lipgloss.Color(p.panel))
 		st.raised = fg(p.text).Background(lipgloss.Color(p.raised))
 		st.selected = fg(p.text).Background(lipgloss.Color(p.selection))
 		st.match = fg(p.ink).Background(lipgloss.Color(p.gold)).Bold(true)
+		// Mode badge inverts the accent so Memories is recognizable
+		// at a glance against the Sessions top bar.
+		st.modeBadge = fg(p.panel).Background(lipgloss.Color(p.accent)).Bold(true)
 	}
 	return st
 }

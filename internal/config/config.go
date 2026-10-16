@@ -27,6 +27,7 @@ type Config struct {
 	scopeMu             sync.RWMutex
 	Theme               string   `json:"theme,omitempty"`
 	Roots               []Root   `json:"roots,omitempty"`
+	MemoryRoots         []Root   `json:"memory_roots,omitempty"`
 	Exclusions          []string `json:"exclusions,omitempty"`
 	DisableDefaultRoots bool     `json:"disable_default_roots,omitempty"`
 
@@ -116,6 +117,14 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("parse config %s: root for provider %q has an empty path", path, r.Provider)
 		}
 	}
+	for _, r := range cfg.MemoryRoots {
+		if r.Provider != model.ProviderClaudeCode && r.Provider != model.ProviderCodex {
+			return nil, fmt.Errorf("parse config %s: unknown provider %q in memory root", path, r.Provider)
+		}
+		if r.Path == "" {
+			return nil, fmt.Errorf("parse config %s: memory root for provider %q has an empty path", path, r.Provider)
+		}
+	}
 	if cfg.IndexingDays != nil && !ValidIndexingDays(*cfg.IndexingDays) {
 		return nil, fmt.Errorf("parse config %s: indexing_days must be 0, 7, or 30", path)
 	}
@@ -181,6 +190,13 @@ func (c *Config) saveLocked() error {
 	} else {
 		delete(merged, "roots")
 	}
+	if len(c.MemoryRoots) > 0 {
+		if err := set("memory_roots", c.MemoryRoots); err != nil {
+			return fmt.Errorf("encode config: %w", err)
+		}
+	} else {
+		delete(merged, "memory_roots")
+	}
 	if len(c.Exclusions) > 0 {
 		if err := set("exclusions", c.Exclusions); err != nil {
 			return fmt.Errorf("encode config: %w", err)
@@ -209,6 +225,30 @@ func (c *Config) saveLocked() error {
 	return nil
 }
 
+// Snapshot returns an independent copy safe to read from another
+// goroutine while the live config is mutated (for example by
+// Settings) on the owner's goroutine. Slice contents are copied.
+func (c *Config) Snapshot() *Config {
+	if c == nil {
+		return nil
+	}
+	c.scopeMu.RLock()
+	defer c.scopeMu.RUnlock()
+	snap := &Config{
+		Theme:               c.Theme,
+		Roots:               append([]Root{}, c.Roots...),
+		MemoryRoots:         append([]Root{}, c.MemoryRoots...),
+		Exclusions:          append([]string{}, c.Exclusions...),
+		DisableDefaultRoots: c.DisableDefaultRoots,
+		extraRoots:          append([]Root{}, c.extraRoots...),
+	}
+	if c.IndexingDays != nil {
+		days := *c.IndexingDays
+		snap.IndexingDays = &days
+	}
+	return snap
+}
+
 // AddRoot records a configured root and reports whether it changed.
 func (c *Config) AddRoot(r Root) bool {
 	for _, existing := range c.Roots {
@@ -234,6 +274,43 @@ func (c *Config) RemoveConfiguredRoot(provider model.Provider, path string) bool
 // IsConfiguredRoot reports whether the root came from the config file.
 func (c *Config) IsConfiguredRoot(provider model.Provider, path string) bool {
 	for _, r := range c.Roots {
+		if r.Provider == provider && Canonical(r.Path) == Canonical(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// AddMemoryRoot records a configured memory root and reports whether it changed.
+func (c *Config) AddMemoryRoot(r Root) bool {
+	for _, existing := range c.MemoryRoots {
+		if existing.Provider == r.Provider && Canonical(existing.Path) == Canonical(r.Path) {
+			return false
+		}
+	}
+	c.MemoryRoots = append(c.MemoryRoots, r)
+	return true
+}
+
+// RemoveMemoryRoot drops a user-configured memory root.
+func (c *Config) RemoveMemoryRoot(provider model.Provider, path string) bool {
+	for i, r := range c.MemoryRoots {
+		if r.Provider == provider && Canonical(r.Path) == Canonical(path) {
+			c.MemoryRoots = append(c.MemoryRoots[:i], c.MemoryRoots[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveConfiguredMemoryRoot is an alias for RemoveMemoryRoot.
+func (c *Config) RemoveConfiguredMemoryRoot(provider model.Provider, path string) bool {
+	return c.RemoveMemoryRoot(provider, path)
+}
+
+// IsConfiguredMemoryRoot reports whether the memory root came from the config file.
+func (c *Config) IsConfiguredMemoryRoot(provider model.Provider, path string) bool {
+	for _, r := range c.MemoryRoots {
 		if r.Provider == provider && Canonical(r.Path) == Canonical(path) {
 			return true
 		}

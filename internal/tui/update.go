@@ -33,6 +33,10 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = focusOverview
 				m.overviewOpen = !m.isWide()
 			}
+			if m.mem != nil && (m.mem.focus == memFocusDetail || m.mem.detailOpen) {
+				m.mem.focus = memFocusDetail
+				m.mem.detailOpen = !m.isWide()
+			}
 		}
 		m.View() // normalize scroll offsets for the resized viewport
 		return m, nil
@@ -104,6 +108,9 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pending, m.hasPending = nil, false
 		}
 		return m, nil
+	case memoriesLoadedMsg:
+		m.onMemoriesLoaded(msg)
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
@@ -123,6 +130,12 @@ func sessionsSignature(sessions []index.SessionRow) string {
 	return b.String()
 }
 
+// openHelp shows the help overlay from the top.
+func (m *appModel) openHelp() {
+	m.overlay = overlayHelp
+	m.helpScroll = 0
+}
+
 func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
 	if msg.Keystroke() == "ctrl+c" {
@@ -138,8 +151,20 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case overlayCopyPreview:
 		return m.onCopyPreviewKey(s)
 	case overlayHelp:
-		if s == "esc" || s == "q" || s == "?" {
+		switch s {
+		case "esc", "q", "?":
 			m.overlay = overlayNone
+		case "j", "down":
+			m.helpScroll++
+		case "k", "up":
+			m.helpScroll--
+		case "pgdown":
+			m.helpScroll += max(1, m.height-3)
+		case "pgup":
+			m.helpScroll -= max(1, m.height-3)
+		}
+		if m.helpScroll < 0 {
+			m.helpScroll = 0
 		}
 		return m, nil
 	case overlaySelector:
@@ -150,8 +175,18 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.chooseIndexingScope {
 		return m.onIndexingScopeKey(s, true)
 	}
+	if m.settings != nil {
+		return m.onSettingsKey(msg)
+	}
+	if m.memoriesOpen() {
+		return m.onMemoriesKey(msg)
+	}
 	if m.initialIndexing {
 		switch s {
+		case "m":
+			// Memories reads its own small stores; it must not
+			// wait for transcript indexing to finish.
+			return m, m.openMemories()
 		case "q":
 			m.overlay, m.quitSelected = overlayQuit, false
 		case "esc":
@@ -165,9 +200,6 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	}
-	if m.settings != nil {
-		return m.onSettingsKey(msg)
 	}
 	if m.transcript != nil {
 		return m.onTranscriptKey(msg)
@@ -222,7 +254,7 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 			m.applyPending()
 		}
 	case "?":
-		m.overlay = overlayHelp
+		m.openHelp()
 	case ",":
 		m.openSettings()
 	case "t":
@@ -239,6 +271,8 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 		m.openCopyMenu()
 	case "s":
 		m.openSearch()
+	case "m":
+		return m, m.openMemories()
 	}
 	return m, nil
 }
@@ -307,7 +341,7 @@ func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 		m.overviewScroll += step
 		m.normalizeOverviewScroll()
 	case "?":
-		m.overlay = overlayHelp
+		m.openHelp()
 	}
 	return m, nil
 }
@@ -573,6 +607,23 @@ func (m *appModel) openSelector(kind selectorKind) {
 
 func (m *appModel) selectorOptions() []selectorOption {
 	switch m.selector {
+	case selectorReference:
+		if m.mem == nil {
+			return nil
+		}
+		e, ok := m.mem.selectedEntry()
+		if !ok {
+			return nil
+		}
+		var out []selectorOption
+		for _, action := range memRefActions(e) {
+			action := action
+			entry := e
+			out = append(out, selectorOption{label: action.label, apply: func(m *appModel) {
+				m.followMemRef(entry, action)
+			}})
+		}
+		return out
 	case selectorTime:
 		var out []selectorOption
 		for _, opt := range []struct {

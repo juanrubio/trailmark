@@ -12,6 +12,9 @@ environment variable overrides the config directory.
   "roots": [
     {"provider": "codex", "path": "/extra/codex/sessions"}
   ],
+  "memory_roots": [
+    {"provider": "claude-code", "path": "/extra/claude/memory"}
+  ],
   "exclusions": ["/work/private-project"],
   "disable_default_roots": false,
   "theme": "green",
@@ -30,6 +33,47 @@ environment variable overrides the config directory.
   transcripts are never indexed, and applying an exclusion removes
   any already-derived index rows for it. Source logs are never
   modified.
+
+## Memory roots
+
+The Memories view (`m`) reads provider memory stores directly; they are
+never added to the transcript index. Memory roots are derived, then
+deduplicated by provider and canonical path, keeping only directories
+that exist:
+
+- Each effective Claude Code session root (a `projects` directory) is
+  read for `*/memory` stores; a directory whose name is `memory`, or
+  that directly contains Markdown notes, is read as a store itself.
+- Each effective Codex session root maps to its sibling `memories`
+  directory (`~/.codex/sessions` → `~/.codex/memories`); a Codex home
+  directory is accepted and its `memories/` subdirectory is used.
+- `CLAUDE_CONFIG_DIR` adds `$CLAUDE_CONFIG_DIR/projects`, and
+  `CODEX_HOME` adds `$CODEX_HOME/memories`.
+- The `autoMemoryDirectory` value in user-level Claude settings
+  (`$CLAUDE_CONFIG_DIR/settings.json`, or `~/.claude/settings.json`
+  without the variable) is added as a direct Claude memory root. Only
+  that one key is read from the settings file.
+- `memory_roots` adds explicit extra roots with the same
+  `{provider, path}` shape as `roots` (`claude-code` or `codex`). It is
+  a separate key: session `roots` are not treated as memory roots
+  beyond the derivation above.
+
+**Sources and settings** (`,`) lists the effective memory roots under
+**Memory roots**, each labelled *(derived)* or *(configured)*.
+**Add memory root…** stores an absolute path in `memory_roots` (Tab
+switches provider). Only configured roots can be removed (`d`); derived
+roots come from the derivation above, so remove them by changing that
+source or by adding an exclusion for the path. Exclusions apply to
+memories by source path and by confidently known project; a
+consolidated section evidencing several projects is hidden whole
+when any of them is excluded, and so is a section referencing a
+path-excluded rollout summary (its project evidence is never
+read). A section whose project is unknown is
+not claimed to be redacted by a project exclusion — exclude the
+file or root instead.
+Changes take effect on the next explicit `R` refresh in Memories.
+Memory files are opened read-only with a 2 MiB per-file cap; larger
+files show a visible truncated state and their readable prefix.
 
 ## First-run indexing
 
@@ -93,7 +137,7 @@ throughput. No benchmark is available yet for the new scoped first run.
 ## Terminal appearance
 
 Trailmark offers four color themes: **Green** (the original default),
-**Blue**, **Amber**, and **Monokai**. Press `,` from the session list, select **Theme**,
+**Blue**, **Amber**, and **Monokai**. Press `,` from the session list or Memories, select **Theme**,
 and press Enter to choose one. Enter saves and applies the choice; Esc
 cancels. The choice persists in Trailmark's config as `"theme": "green"`,
 `"blue"`, `"amber"`, or `"monokai"`. Missing or unrecognized values use Green.

@@ -195,6 +195,7 @@ Show only relevant keys in each view, with full help available through `?`. A fo
 | `/` | List: filter visible purpose/project/path/provider labels. Focused overview: find within its details. | Search within the open transcript. |
 | `s` | Enter explicit cross-session content search. | Edit the cross-session content query in results. |
 | `t` | Open the selected session's transcript. | Return path is Esc. |
+| `m` | Open Memories (read-only provider memory stores). | In Memories: back to sessions. |
 | `r` / `f` / `n` | Prepare resume / fork / clean session. | No continuation shortcuts while reading; return to overview. |
 | `]` / `[` | Focused overview: next / previous local match. | Next / previous match. |
 | `c` | Copy menu: directory or available context. | Copy selected message/exchange with provenance. |
@@ -238,6 +239,12 @@ or next/previous-match jump must reveal its target without retaining an
 unrelated text-scroll offset. Both line scrolling and Page Up/Down load adjacent transcript pages in either direction, including previously evicted messages, so the loading boundary never becomes a scrolling endpoint.
 
 The home-screen `/` filter remains a lightweight way to narrow recognizable cards. It must not unexpectedly replace the day-grouped overview with relevance-ranked transcript results.
+
+### Memories
+
+`m` from the session list opens the read-only Memories view of Claude Code and Codex memory stores; `m` or Esc returns to the session list with its selection, filters, and scroll intact. The two modes are visually distinct: the Sessions top bar shows the accent-colored **Trailmark** wordmark, while Memories shows an inverted accent **Memories** badge over an accent-colored rule. Both status bars advertise `m` for switching modes. The current harness and project carry into Memories, but the session list's seven-day window does not. Wide terminals show an entry list beside the selected memory (Tab moves focus); narrow terminals open the detail with Enter and return with Esc.
+
+Default browsing shows notes and consolidated sections; `a` cycles the category sets (All → Indexes and overviews → Supporting and raw → default). `h` cycles harness and `p` cycles project, ending at Unknown/global for entries whose project has no reliable evidence — the evidence (session association, rollout header, global, unknown) is shown rather than a guessed project. `/` filters the list (Esc cancels), while `s` searches memory text with per-entry match counts and snippets; `n`/`N` move between matches in the raw view. Markdown renders through Glamour by default (plain sanitized text without color); `v` toggles the exact raw source with line numbers. `R` is the only refresh and retains selection by entry identity. `c` copies the entry text with its `Source: path:line` reference; `o` opens a resolved note link or an unambiguous indexed-session reference — with several openable references it shows a chooser first — explaining ambiguous or missing references instead of guessing. `i` lists every memory source with its state (ok, missing, unreadable, empty, excluded) and any truncated, unreadable, or outside-root documents; empty states name the route to add a memory root. Source text is sanitized of terminal escapes before display, and no action in this view writes to provider files.
 
 ## 8. Visual and state rules
 

@@ -15,6 +15,7 @@ import (
 	"github.com/juanrubio/trailmark/internal/clipboard"
 	"github.com/juanrubio/trailmark/internal/config"
 	"github.com/juanrubio/trailmark/internal/index"
+	"github.com/juanrubio/trailmark/internal/memory"
 	"github.com/juanrubio/trailmark/internal/model"
 	"github.com/juanrubio/trailmark/internal/scan"
 )
@@ -73,6 +74,46 @@ func Run(ctx context.Context, deps Deps) error {
 		fresh, failed, err := scanAndLoad(initialCtx, ctx)
 		return scanDoneMsg{sessions: fresh, failedRoots: failed, err: err}
 	}
+	// loadMemories runs inside the load command, off the update
+	// goroutine: all filesystem-bound derivation (root discovery,
+	// settings reads, per-session canonicalization) happens here
+	// from value snapshots taken on the update goroutine, where
+	// Settings mutations also run. It never touches the transcript
+	// index, so Memories opens without waiting for a scan —
+	// including for its database connection, which the scanner
+	// may hold inside a long transaction. Claude project
+	// association comes from the session snapshot: a session log's
+	// directory is its Claude project directory, mapped to the
+	// recorded cwd (first row wins). The adapter's bounded
+	// session-log peek covers projects missing from a
+	// still-growing snapshot.
+	loadMemories := func(loadCtx context.Context, rows []index.SessionRow, cfgSnap *config.Config) (*memory.Catalog, error) {
+		byDir := map[string]string{}
+		for _, row := range rows {
+			if row.Provider != model.ProviderClaudeCode || row.CWD == "" || row.SourcePath == "" {
+				continue
+			}
+			dir := config.Canonical(filepath.Dir(row.SourcePath))
+			if _, ok := byDir[dir]; !ok {
+				byDir[dir] = row.CWD
+			}
+		}
+		var excluded func(string) bool
+		if cfgSnap != nil {
+			excluded = cfgSnap.Excluded
+		}
+		return memory.Load(loadCtx, memory.Options{
+			Roots:              memory.RootsFromConfig(cfgSnap),
+			Excluded:           excluded,
+			ClaudeProjectByDir: byDir,
+		})
+	}
+	snapshotConfig := func() *config.Config {
+		if deps.Config == nil {
+			return nil
+		}
+		return deps.Config.Snapshot()
+	}
 	d := dataDeps{
 		scanProgress:      runtime.progress,
 		cancelInitialScan: cancelInitial,
@@ -86,9 +127,11 @@ func Run(ctx context.Context, deps Deps) error {
 			model.ProviderClaudeCode: claudecode.Adapter{}.Capability(),
 			model.ProviderCodex:      codex.Adapter{}.Capability(),
 		},
-		copier:   clipboard.System{},
-		rescan:   rescan,
-		settings: &settingsBackend{cfg: deps.Config, ix: deps.Index, scanner: deps.Scanner},
+		copier:         clipboard.System{},
+		snapshotConfig: snapshotConfig,
+		loadMemories:   loadMemories,
+		rescan:         rescan,
+		settings:       &settingsBackend{cfg: deps.Config, ix: deps.Index, scanner: deps.Scanner},
 	}
 	m := newModel(ctx, d, scanCmd, launchDir, home, sessions)
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithEnvironment(terminalEnvironment(os.Environ())))
@@ -215,6 +258,66 @@ func (b *settingsBackend) RemoveRoot(_ context.Context, provider model.Provider,
 		}
 	}
 	return fmt.Errorf("root not found")
+}
+
+// MemoryRoots lists the effective memory roots (derived plus
+// configured), including configured roots whose directory is
+// currently missing so they stay visible and removable.
+func (b *settingsBackend) MemoryRoots() []MemoryRootInfo {
+	if b.cfg == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []MemoryRootInfo
+	for _, r := range memory.RootsFromConfig(b.cfg) {
+		configured := b.cfg.IsConfiguredMemoryRoot(r.Provider, r.Path)
+		seen[string(r.Provider)+"|"+config.Canonical(r.Path)] = true
+		out = append(out, MemoryRootInfo{Provider: r.Provider, Path: r.Path, Configured: configured, Derived: !configured})
+	}
+	for _, r := range b.cfg.MemoryRoots {
+		key := string(r.Provider) + "|" + config.Canonical(r.Path)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, MemoryRootInfo{Provider: r.Provider, Path: r.Path, Configured: true})
+	}
+	return out
+}
+
+func (b *settingsBackend) AddMemoryRoot(provider model.Provider, path string) error {
+	if b.cfg == nil {
+		return fmt.Errorf("configuration unavailable")
+	}
+	if provider != model.ProviderClaudeCode && provider != model.ProviderCodex {
+		return fmt.Errorf("unknown provider %q", provider)
+	}
+	abs, err := absolutizePath(path)
+	if err != nil {
+		return err
+	}
+	previous := append([]config.Root{}, b.cfg.MemoryRoots...)
+	b.cfg.AddMemoryRoot(config.Root{Provider: provider, Path: abs})
+	if err := b.cfg.Save(); err != nil {
+		b.cfg.MemoryRoots = previous
+		return err
+	}
+	return nil
+}
+
+func (b *settingsBackend) RemoveMemoryRoot(provider model.Provider, path string) error {
+	if b.cfg == nil {
+		return fmt.Errorf("configuration unavailable")
+	}
+	previous := append([]config.Root{}, b.cfg.MemoryRoots...)
+	if !b.cfg.RemoveMemoryRoot(provider, path) {
+		return fmt.Errorf("memory root %s is derived, not configured, so it cannot be removed here", path)
+	}
+	if err := b.cfg.Save(); err != nil {
+		b.cfg.MemoryRoots = previous
+		return err
+	}
+	return nil
 }
 
 func (b *settingsBackend) AddExclusion(path string) error {

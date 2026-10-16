@@ -1,24 +1,29 @@
 # Trailmark
 
-A local, keyboard-first TUI for remembering recent coding-agent work and deciding how to continue it.
+A local, keyboard-first TUI for remembering recent coding-agent work, browsing what your agents saved to memory, and deciding how to continue.
 
-See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area.
+See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area. Press `m` to browse the memories Claude Code and Codex have saved — read-only, searchable, and clearly a separate mode from the session list.
 
 ![Trailmark in action: browsing recent coding sessions, filtering by harness, searching a transcript, and preparing a resume command](docs/media/showcase.gif)
 
 *Recorded from the application using fictional sessions. [Recreate the demo](tapes/README.md).*
 
-**Status:** MVP implemented (Phases 1–5) — recent-work overview, continuation preparation and copying, transcript reading, content search, and sources/settings with the full derived-data lifecycle. Performance measurements are in [docs/benchmarks.md](docs/benchmarks.md) and scripted validation in [docs/validation.md](docs/validation.md). The project name has not been cleared.
+**Status:** MVP implemented (Phases 1–5) — recent-work overview, continuation preparation and copying, transcript reading, content search, and sources/settings with the full derived-data lifecycle — plus read-only browsing and search of Claude Code and Codex memory stores. Performance measurements are in [docs/benchmarks.md](docs/benchmarks.md) and scripted validation in [docs/validation.md](docs/validation.md). The project name has not been cleared.
+
+## Install
+
+Download the binary for your platform from the [latest release](https://github.com/juanrubio/trailmark/releases/latest), verify it against the release's `SHA256SUMS`, make it executable if needed, put it on your PATH as `trailmark`, and run `trailmark --version` to confirm. Release binaries are standalone and do not require Go. Trailmark needs an interactive terminal; it reads native session logs and memory files on this machine only — source logs and memory files are never modified. Other platforms can build from source with the Go version declared in `go.mod` (see [Development](#development)).
 
 ## Core workflows
 
 - **Remember recent work:** scan a seven-day overview across projects and agents without having to enter a search query.
 - **Choose how to continue:** compare a session's purpose, directory, and latest context before choosing resume, fork, or a clean session.
 - **Inspect when needed:** open the transcript or search its contents to resolve a question. This is a secondary MVP workflow.
+- **Browse saved memories:** press `m` to open the read-only Memories view for Claude Code and Codex memory stores, with filters, full-text search, rendered/raw Markdown, and explicit `R` refresh.
 
 ## First release
 
-- Linux, with native Claude Code and Codex session logs.
+- Linux first, with macOS release binaries; native Claude Code and Codex session logs and memory stores.
 - Choose how much history to index on first launch, then follow a dedicated progress screen. Press Esc to stop and browse sessions already saved; later launches open cached sessions immediately while refreshing in the background.
 - Launch `trailmark` into the last seven days, grouped by day and ordered by last session activity. If that scope is empty, automatically try 30 days, then All time, to show available history.
 - Use the time selector to show Today, 3 days, 7 days, 30 days, or All time. An explicit time choice stays fixed; otherwise choosing a project or harness automatically finds the smallest populated window from 7 days, 30 days, and All time. The seven-day default does not limit retained history.
@@ -31,6 +36,7 @@ See what you worked on over the last few days, recognize each session's purpose 
 - Inspect recorded models, reasoning effort, Git context, token usage, and latest-turn outcome in the Overview. Press `e` with Overview focused to expand recorded file and command activity; missing provider data is explicitly unavailable.
 - Present resume, fork, and clean-session choices with their history behavior and exact target directory. The first release prepares/copies validated native commands where supported; it does not launch agents.
 - Read transcripts, search their contents with matching snippets and passage navigation, and explicitly copy selected context with its source reference.
+- Press `m` for a read-only Memories view of Claude Code and Codex memory stores: notes and consolidated sections by default, with harness/project/category filters, content search with source locations, rendered Markdown (`v` toggles raw source), source status (`i`), and explicit `R` refresh. Memory files are never modified, project scope is labelled Unknown/global rather than guessed, and extra locations are added with the `memory_roots` config key or in settings.
 - Keep source logs read-only and session data on-device, with exclusion controls, cache clearing, and visible indexing status.
 
 Next enhancements include bookmarks, personal labels, previewable Markdown context export, and related-session navigation. Semantic search, generated summaries, and additional adapters are deferred until the recent-work overview is validated. Future adapters may include GitHub Copilot CLI, Muse Code, Pi, and OpenCode.
@@ -70,11 +76,11 @@ they do not speed up parsing or database writes for files you include.
 - [Visual specification](UX.md#8-visual-and-state-rules) — mockup colors, session selection, separators, spacing, and terminal adaptations; [visual acceptance criteria](PRD.md#visual-acceptance).
 - [Interactive TUI concept](docs/mockups/index.html) — open locally in a browser; fictional sessions, with no connection to real logs or agents.
 - [Browser interface plan](docs/web-interface-plan.md) — deferred proposal for HTML pages served by Trailmark; not implemented.
-- [Memory browser plan](docs/memory-browser-plan.md) — planned read-only browsing and search of Claude Code and Codex memories within Trailmark; not implemented.
+- [Memory browser plan](docs/memory-browser-plan.md) — design record for the implemented read-only browsing and search of Claude Code and Codex memories within Trailmark.
 
 ## Technology direction
 
-Go, using the Charm TUI stack described in the PRD: Bubble Tea v2, Bubbles, and Lip Gloss v2. This follows the stack already used by the local gh-boardwalk project. Cobra may handle the minimal launch interface.
+Go, using the Charm TUI stack described in the PRD: Bubble Tea v2, Bubbles, and Lip Gloss v2, with Glamour for rendered memory Markdown. Cobra handles the minimal launch interface.
 
 ## Development
 

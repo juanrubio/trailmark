@@ -23,8 +23,6 @@ func (m *appModel) View() tea.View {
 		content = lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, m.viewQuitModal(pw, ph))
 	case m.chooseIndexingScope:
 		content = m.viewIndexingScope(w, h, true)
-	case m.initialIndexing:
-		content = m.viewInitialIndexing(w, h)
 	case m.overlay == overlayHelp:
 		content = m.viewHelp(w, h)
 	case m.overlay == overlaySelector:
@@ -41,7 +39,16 @@ func (m *appModel) View() tea.View {
 	case m.overlay == overlayCopyPreview:
 		content = m.viewCopyPreview(w, h)
 	case m.settings != nil:
+		// Settings can be opened from either mode; it renders
+		// above Memories so closing it returns there.
 		content = m.viewSettings(w, h)
+	case m.memoriesOpen():
+		// Memories is independent of transcript indexing: it
+		// renders (and its overlays above) while the initial scan
+		// is still running behind it.
+		content = m.viewMemories(w, h)
+	case m.initialIndexing:
+		content = m.viewInitialIndexing(w, h)
 	case m.transcript != nil:
 		content = m.viewTranscript(w, h)
 	case m.search != nil:
@@ -101,7 +108,7 @@ func (m *appModel) renderHeader(w int) string {
 	if m.filterText != "" {
 		scope += " · Filter: " + m.filterText
 	}
-	left := m.styles().heading.Render("Trailmark") + "  " + scope
+	left := m.styles().accent.Bold(true).Render("Trailmark") + "  " + scope
 	right := itoa(len(m.visibleSessions())) + " sessions"
 	line := left
 	if lipgloss.Width(left)+lipgloss.Width(right)+2 <= w {
@@ -149,12 +156,12 @@ func (m *appModel) renderFooter(w int) string {
 		return m.rule(w) + "\n" + m.footerLines(lines, w)
 	}
 	if w >= 110 {
-		hints := m.shortcutHints("  ", "↑↓/jk", "Select", "Enter", "Overview", "p", "Project", "w", "When", "h", "Harness", "/", "Filter", "t", "Transcript", "s", "Search", "?", "Help", "q", "Quit")
+		hints := m.shortcutHints("  ", "↑↓/jk", "Select", "Enter", "Overview", "p", "Project", "w", "When", "h", "Harness", "/", "Filter", "t", "Transcript", "s", "Search", "m", "Memories", "?", "Help", "q", "Quit")
 		lines = append(lines, truncate(hints, w))
 	} else {
 		lines = append(lines,
 			truncate(m.shortcutHints("  ", "↑↓/jk", "Select", "Enter", "Overview", "p", "Project", "w", "When", "h", "Harness"), w),
-			truncate(m.shortcutHints("  ", "/", "Filter", "t", "Transcript", "?", "Help", "q", "Quit"), w))
+			truncate(m.shortcutHints("  ", "/", "Filter", "t", "Transcript", "m", "Memories", "?", "Help", "q", "Quit"), w))
 	}
 	if m.windowDays != 0 && len(m.visibleSessions()) == 0 {
 		lines = append(lines, m.styles().path.Render("Show all time: ")+m.shortcutHints("", "w", "then All time"))
@@ -413,6 +420,8 @@ func (m *appModel) viewSelector(w, h int) string {
 		title = "Project"
 	case selectorHarness:
 		title = "Harness"
+	case selectorReference:
+		title = "Open reference"
 	}
 	lines := []string{m.styles().heading.Render(title), ""}
 	for i, opt := range m.selectorOptions() {
@@ -453,12 +462,33 @@ func (m *appModel) viewHelp(w, h int) string {
 		"s            Search session content",
 		"r / f / n    Resume, fork, clean session",
 		"c            Copy directory or session context",
+		"m            Memories (from the session list)",
 		",            Sources and settings",
 		"?            This help",
 		"q            Quit",
-		"", "Press Esc or q to close.",
+		"", "Memories:",
+		"m / Esc      Back to sessions",
+		"Tab          Switch list/detail focus (wide)",
+		"/            Filter memories",
+		"s            Search memory content",
+		"n / N        Next / previous search match",
+		"h / p / a    Cycle harness, project, categories",
+		"v            Rendered / raw source",
+		"o            Open referenced note or session",
+		"c            Copy memory with its source",
+		"i            Memory sources and coverage",
+		"R            Refresh memories",
+		",            Sources and settings (Esc returns here)",
 	}
-	return strings.Join(lines, "\n")
+	bodyH := max(1, h-1)
+	m.helpScroll = scrollStart(len(lines), m.helpScroll, bodyH)
+	end := min(len(lines), m.helpScroll+bodyH)
+	body := fitPane(strings.Join(lines[m.helpScroll:end], "\n"), w, bodyH)
+	footer := "Esc Close"
+	if len(lines) > bodyH {
+		footer = "↑↓/jk Scroll · PgUp/PgDown Page · Esc Close"
+	}
+	return body + "\n" + truncate(footer, w)
 }
 
 func originLabel(o model.PurposeOrigin) string {

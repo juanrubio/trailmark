@@ -50,6 +50,10 @@ The user decides whether the selected session's history remains useful. Resume c
 
 The user opens a transcript only when they need more detail. They can scroll, search within that session, and move between highlighted matches. An explicit content-search mode can search across sessions within the visible project/time scope and jump to a matching passage. Returning restores the overview's selection and filters. Selected exchanges can be copied with provenance.
 
+### Browse saved memories — secondary
+
+The user presses `m` to see what Claude Code and Codex have saved as memory: notes and consolidated sections by default, scoped by the carried harness and project. They can filter, search the full text with source locations, read rendered or raw Markdown, follow a resolved note or unambiguous session reference, and return to the session list with its state intact. Memories are read directly from the provider stores, never modified, and refreshed only on `R`.
+
 Across these workflows, a malformed or unavailable source must not prevent browsing other sessions. Scan coverage and freshness must explain the limits of the results.
 
 ## 4. Scope
@@ -126,6 +130,13 @@ Across these workflows, a malformed or unavailable source must not prevent brows
    - Show what will be copied. If clipboard access is unavailable, provide selectable plain text with the same provenance and do not report a successful copy.
    - Display/copy native continuation commands only when the adapter has a validated contract and enough source metadata. Include required cwd and provider-home context, quote arguments correctly, and explain unsupported or missing-directory cases. Do not substitute the directory from which Trailmark was launched when the recorded cwd is missing.
    - Label the final action **Copy command**, not **Launch**. Never execute it in the MVP or imply that copying resumed, forked, or created a session. Direct native launch handoff can be designed separately after the overview is validated.
+
+7. **Memories (read-only)**
+   - Discover Claude Code project memory directories (an index plus topic notes, with optional frontmatter) and Codex memory documents (consolidated memory split into heading sections, the overview, raw memories, rollout summaries, and extension notes; skills and extension instruction files are excluded). Unknown recognized Markdown falls back to whole-document browsing. Layouts are observed provider behavior, not a universal contract; see [docs/providers.md](docs/providers.md).
+   - Derive memory roots from the effective session roots, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and Claude's `autoMemoryDirectory` setting (only that key is read); extra locations come from the separate `memory_roots` config key or Settings. Derived roots are listed but not removable. Read files read-only with a 2 MiB per-file cap and a visible truncated state; sanitize terminal escapes in source text before rendering; honor exclusions by path and by confidently known project.
+   - Never guess a project: association comes from an indexed session in the same Claude project directory (or a bounded peek at that directory's own session log when the index has none), a rollout summary's recorded `cwd`, or rollout references for consolidated sections; otherwise the entry is labelled Unknown, or global for the Codex overview. The evidence is shown with the source path and line span.
+   - Show notes and consolidated sections by default; index, overview, supporting, and raw material are available through the category control. Provide harness, project, and text filters plus literal case-insensitive content search grouped by entry with snippets and match navigation. Render Markdown (Glamour) with `v` toggling the exact raw source; refresh is explicit (`R`) and retains selection by section identity (canonical path + heading path + occurrence index). Copying is explicit and includes the source reference; selecting never copies.
+   - Editing, deleting, merging, importing, synchronizing, or model-generated memory content is out of scope. Trailmark does not claim to know which memories a running agent loaded or used.
 
 ### Project identity and session relationships
 

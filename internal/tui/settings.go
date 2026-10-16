@@ -53,6 +53,23 @@ type themeStore interface {
 	SetTheme(name string) error
 }
 
+// MemoryRootInfo describes one effective memory root for settings.
+type MemoryRootInfo struct {
+	Provider   model.Provider
+	Path       string
+	Configured bool // stored in memory_roots; removable
+	Derived    bool // derived from session roots, env, or provider settings
+}
+
+// memoryRootsStore is the optional settings capability for memory
+// roots, mirroring themeStore: backends without it simply do not
+// show the Memory roots section.
+type memoryRootsStore interface {
+	MemoryRoots() []MemoryRootInfo
+	AddMemoryRoot(provider model.Provider, path string) error
+	RemoveMemoryRoot(provider model.Provider, path string) error
+}
+
 var themeChoices = []struct{ name, label string }{{"green", "Green"}, {"blue", "Blue"}, {"amber", "Amber"}, {"monokai", "Monokai"}}
 
 func themeLabel(name string) string {
@@ -65,11 +82,12 @@ func themeLabel(name string) string {
 }
 
 type settingsItem struct {
-	kind      string // root, exclusion, action
+	kind      string // root, memory-root, section, exclusion, action
 	label     string
 	root      RootInfo
+	memRoot   MemoryRootInfo
 	exclusion string
-	action    string // add-root, add-exclusion, clear-cache, rescan
+	action    string // add-root, add-memory-root, add-exclusion, clear-cache, rescan
 }
 
 type settingsState struct {
@@ -82,6 +100,7 @@ type settingsState struct {
 	input       string
 	provider    model.Provider
 	confirm     string
+	noRescan    bool // confirm applies without a session rescan (memory roots)
 	onConfirm   func() string
 	status      string
 	roots       []RootInfo
@@ -123,6 +142,20 @@ func (m *appModel) reloadSettings() {
 		st.items = append(st.items, settingsItem{kind: "root", label: label, root: r})
 	}
 	st.items = append(st.items, settingsItem{kind: "action", label: "Add root…", action: "add-root"})
+	if store, ok := m.deps.settings.(memoryRootsStore); ok {
+		st.items = append(st.items, settingsItem{kind: "section", label: "Memory roots"})
+		for _, r := range store.MemoryRoots() {
+			label := providerLabel(r.Provider) + "  " + r.Path
+			switch {
+			case r.Configured:
+				label += "  (configured)"
+			case r.Derived:
+				label += "  (derived)"
+			}
+			st.items = append(st.items, settingsItem{kind: "memory-root", label: label, memRoot: r})
+		}
+		st.items = append(st.items, settingsItem{kind: "action", label: "Add memory root…", action: "add-memory-root"})
+	}
 	for _, ex := range m.deps.settings.Exclusions() {
 		st.items = append(st.items, settingsItem{kind: "exclusion", label: ex, exclusion: ex})
 	}
@@ -204,10 +237,15 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			st.onConfirm = nil
 			st.status = msgText
 			m.reloadSettings()
+			if st.noRescan {
+				st.noRescan = false
+				return m, nil
+			}
 			return m, m.rescanCmd(true)
 		case "esc", "n", "q":
 			st.mode = "list"
 			st.onConfirm = nil
+			st.noRescan = false
 		}
 		return m, nil
 	}
@@ -260,6 +298,10 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				st.mode = "input"
 				st.inputKind = "root"
 				st.input = ""
+			case "add-memory-root":
+				st.mode = "input"
+				st.inputKind = "memory-root"
+				st.input = ""
 			case "add-exclusion":
 				st.mode = "input"
 				st.inputKind = "exclusion"
@@ -300,6 +342,25 @@ func (m *appModel) confirmDeleteSettingsItem() {
 			return "Root removed. Rescanning…"
 		}
 		st.mode = "confirm"
+	case "memory-root":
+		store, ok := m.deps.settings.(memoryRootsStore)
+		if !ok {
+			return
+		}
+		if !item.memRoot.Configured {
+			st.status = "Derived memory roots are not stored in memory_roots and cannot be removed here. They come from session roots, CLAUDE_CONFIG_DIR/CODEX_HOME, or Claude's autoMemoryDirectory; change that source or add an exclusion for the path."
+			return
+		}
+		st.confirm = fmt.Sprintf("Remove the configured memory root %s? It stops being read as an extra memory root (a derived root for the same path, if any, still applies). Memory files are never modified or deleted.", item.memRoot.Path)
+		provider, path := item.memRoot.Provider, item.memRoot.Path
+		st.noRescan = true
+		st.onConfirm = func() string {
+			if err := store.RemoveMemoryRoot(provider, path); err != nil {
+				return "Remove failed: " + err.Error()
+			}
+			return "Memory root removed. Press R in Memories to refresh."
+		}
+		st.mode = "confirm"
 	case "exclusion":
 		st.confirm = fmt.Sprintf("Remove the exclusion %s? Matching sources will be indexed again on the next scan.", item.exclusion)
 		path := item.exclusion
@@ -335,6 +396,20 @@ func (m *appModel) finishSettingsInput() tea.Cmd {
 			return "Exclusion applied; matching derived data removed. Rescanning…"
 		}
 		st.mode = "confirm"
+		return nil
+	}
+	if st.inputKind == "memory-root" {
+		store, ok := m.deps.settings.(memoryRootsStore)
+		if !ok {
+			st.status = "Failed: memory roots are unavailable in this configuration"
+			return nil
+		}
+		if err := store.AddMemoryRoot(st.provider, value); err != nil {
+			st.status = "Failed: " + err.Error()
+			return nil
+		}
+		st.status = "Memory root added. Press R in Memories to refresh."
+		m.reloadSettings()
 		return nil
 	}
 	if err := m.deps.settings.AddRoot(st.provider, value); err != nil {
@@ -441,11 +516,16 @@ func (m *appModel) viewSettings(w, h int) string {
 			if item.root.LastOK != "" {
 				label += " · last ok " + item.root.LastOK
 			}
+		case "memory-root":
+			prefix = "Memory root: "
 		case "exclusion":
 			prefix = "Exclusion: "
 		}
 		row := marker + truncate(prefix+label, w-2)
-		if item.kind == "root" || item.kind == "exclusion" {
+		if item.kind == "section" {
+			row = marker + m.styles().heading.Render(truncate(label, w-2))
+		}
+		if item.kind == "root" || item.kind == "memory-root" || item.kind == "exclusion" {
 			row = marker + m.styles().path.Render(truncate(prefix+label, w-2))
 		}
 		if i == st.cursor {
@@ -455,7 +535,8 @@ func (m *appModel) viewSettings(w, h int) string {
 	}
 	_ = cursorLine
 	if st.status != "" {
-		lines = append(lines, "", st.status)
+		lines = append(lines, "")
+		lines = append(lines, wrap(st.status, w)...)
 	}
 	footerStart := len(lines)
 	switch st.mode {
@@ -463,6 +544,8 @@ func (m *appModel) viewSettings(w, h int) string {
 		label := "Path: "
 		if st.inputKind == "root" {
 			label = "Root path (" + providerLabel(st.provider) + ", Tab switches provider): "
+		} else if st.inputKind == "memory-root" {
+			label = "Memory root path (" + providerLabel(st.provider) + ", Tab switches provider): "
 		} else {
 			label = "Exclusion path: "
 		}

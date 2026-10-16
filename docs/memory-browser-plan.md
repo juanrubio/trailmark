@@ -1,11 +1,33 @@
 # Plan: read-only memory browsing in Trailmark
 
-**Status: Direction accepted; detailed plan only. Implementation is deferred.**
+**Status: Implemented on 2026-10-16.**
 
-Recorded on 2026-10-16 against Trailmark v0.6.0. The agreed direction is
-a read-only Memories view inside Trailmark, initially supporting Claude
-Code and Codex. This document does not authorize implementation or describe
-a feature already available in the released binary.
+Recorded on 2026-10-16 against Trailmark v0.6.0 and implemented the same
+day: a read-only Memories view inside Trailmark, initially supporting
+Claude Code and Codex. The implementation lives in `internal/memory`
+(shared catalog, no terminal dependencies) and `internal/tui/memories*.go`.
+
+Decisions taken where this plan left questions open:
+
+- Memory roots derive from the effective session roots (Claude project
+  stores as-is; each Codex session root maps to its sibling `memories/`
+  directory), from `CLAUDE_CONFIG_DIR` / `CODEX_HOME`, and from Claude's
+  `autoMemoryDirectory` setting (only that key is read). Extra locations
+  use a separate `memory_roots` configuration key, managed in Settings as
+  well; derived roots are listed but not removable.
+- Rendered Markdown uses Glamour (`charm.land/glamour/v2`, the
+  lipgloss-v2-native major of the `github.com/charmbracelet/glamour`
+  library; the v0/v1 line does not compile against this repository's
+  Bubble Tea v2 dependency stack). `v` toggles rendered/raw.
+- `m` toggles between Sessions and Memories; refresh is explicit only
+  (`R`); the default categories are notes and consolidated sections.
+- A project is never guessed: entries without reliable evidence are
+  labelled Unknown (or global), with the evidence shown.
+- Files are read read-only with a 2 MiB per-file cap and a visible
+  truncated state. Section identity is canonical path + heading path +
+  occurrence index, so repeated headings stay distinct.
+- Terminal escape sequences in source text are sanitized before
+  rendering. Repository fixtures are fictional only.
 
 ## 1. Purpose and product boundary
 
@@ -351,7 +373,8 @@ evidence of a write: reading can update it depending on mount settings.
 Update README, PRD, UX, configuration guidance, and provider documentation
 once implementation is authorized and the actual behavior is established.
 Record compatibility and performance limits without claiming universal
-memory-format support.
+memory-format support. (Done: see the Memories sections in those
+documents.)
 
 ## 10. Effort, maintenance, and remaining decisions
 
@@ -375,6 +398,10 @@ Before implementation, settle:
 5. Whether automatic refresh is needed initially; explicit refresh is the
    proposed baseline.
 
-**Next step when resumed:** confirm the remaining decisions, then implement
-source contracts and fictional fixtures. This plan adds no memory browsing
-behavior to the current application.
+**Outcome:** all four stages are implemented and covered by tests,
+including robustness cases (malformed frontmatter, empty and unreadable
+stores, dangling symlinks, CRLF/BOM, duplicate headings, repeated
+refresh, cancellation) and a synthetic performance smoke test (200 Codex
+sections plus 100 Claude notes load and search well under the 5-second
+test bound). This document remains the design record; behavior is
+documented in the README, PRD, UX, configuration, and provider docs.

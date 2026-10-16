@@ -79,9 +79,9 @@ func (m *appModel) viewInitialIndexing(w, h int) string {
 	for i, line := range lines {
 		body[i] = clip(line)
 	}
-	footer := m.shortcutHints(" | ", "Esc", "Cancel and browse", "q", "Quit")
+	footer := m.shortcutHints(" | ", "m", "Memories", "Esc", "Cancel and browse", "q", "Quit")
 	if m.ascii {
-		footer = m.shortcutHints(" | ", "Esc", "Cancel and browse", "q", "Quit")
+		footer = m.shortcutHints(" | ", "m", "Memories", "Esc", "Cancel and browse", "q", "Quit")
 	}
 	if m.initialCanceling {
 		footer = m.shortcutHints(" | ", "q", "Quit") + " | Opening indexed sessions"

@@ -12,8 +12,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/juanrubio/trailmark/internal/clipboard"
+	"github.com/juanrubio/trailmark/internal/config"
 	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
+	"github.com/juanrubio/trailmark/internal/memory"
 	"github.com/juanrubio/trailmark/internal/model"
 	"github.com/juanrubio/trailmark/internal/scan"
 )
@@ -37,6 +39,7 @@ const (
 	selectorTime selectorKind = iota
 	selectorProject
 	selectorHarness
+	selectorReference
 )
 
 // focusPane distinguishes list and overview focus in the wide layout.
@@ -70,9 +73,17 @@ type dataDeps struct {
 	inSession         func(ctx context.Context, sourcePath, query string) ([]int, error)
 	content           func(ctx context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error)
 	caps              map[model.Provider]model.Capability
-	copier            clipboard.Copier
-	settings          settingsStore
-	rescan            func(ctx context.Context) ([]index.SessionRow, []string, error)
+	// snapshotConfig copies live configuration on the update
+	// goroutine (where Settings mutations also happen); the
+	// asynchronous loader derives everything filesystem-bound
+	// from that snapshot plus the in-memory session snapshot, so
+	// it never races Settings and never waits on the transcript
+	// database either.
+	snapshotConfig func() *config.Config
+	loadMemories   func(ctx context.Context, sessions []index.SessionRow, cfg *config.Config) (*memory.Catalog, error)
+	copier         clipboard.Copier
+	settings       settingsStore
+	rescan         func(ctx context.Context) ([]index.SessionRow, []string, error)
 }
 
 type appModel struct {
@@ -91,6 +102,7 @@ type appModel struct {
 	transcript          *transcriptState
 	search              *searchState
 	settings            *settingsState
+	mem                 *memoriesState
 
 	applyNextScan bool
 	scanSeq       int
@@ -130,6 +142,7 @@ type appModel struct {
 	workExpanded           bool
 	overviewOpen           bool // narrow full-width overview
 	quitSelected           bool // Cancel is the default choice
+	helpScroll             int
 	overlay                overlayKind
 	selector               selectorKind
 	selCursor              int

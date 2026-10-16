@@ -46,6 +46,66 @@ than simulated.
   - Clean session: `codex` (launched in the recorded cwd)
 - **Unavailable:** launching or executing any of these from Trailmark.
 
+## Memory stores (observed 2026-10-16)
+
+The Memories view (`m`) reads these layouts read-only. They are
+observations from one installation, not a universal storage contract:
+unfamiliar structure falls back to whole-document browsing instead of
+hiding readable content. Files over 2 MiB are shown in a visible
+truncated state with their readable prefix. No memory file is ever
+written, and no git command is run against a memory store.
+
+### Claude Code memory
+
+- **Location:** `~/.claude/projects/<project>/memory/` (or a directory
+  named in `autoMemoryDirectory`), containing `MEMORY.md` plus topic
+  notes. All `*.md` files are walked recursively; dot-directories and
+  `.git` are skipped, directory symlinks are not followed, and a file
+  symlink whose target escapes the approved root is reported as
+  outside-root and never read.
+- **`MEMORY.md`** is the *index* category: one whole-document entry.
+  Markdown links to sibling notes resolve to those notes' entries;
+  missing targets stay unresolved and URLs stay external text.
+- **Other notes** are the *note* category. Optional `---` frontmatter
+  is parsed with a tolerant subset parser (top-level `key: value` and
+  one level of nested maps, flattened as `metadata.type`); an unclosed
+  block is treated as body text, not an error. Title falls back
+  name → first H1 → filename. `description`, `type` (or
+  `metadata.type`), and `originSessionId` are preserved when present.
+- **Project:** an indexed Claude session recorded in the same project
+  directory supplies the recorded cwd (evidence
+  `session-association`). When the index has no such session (for
+  example after an exclusion removed its rows), a bounded peek at
+  that project directory's session logs (at most 3 regular
+  `.jsonl` files, each at most 256 KiB / 100 lines) supplies the
+  same recorded cwd. Without either, the project is Unknown; encoded
+  directory names are never decoded into a guessed path.
+
+### Codex memory
+
+- **Location:** `~/.codex/memories/` (`$CODEX_HOME/memories` when set).
+- **`MEMORY.md`** is *consolidated*: split at H1 headings (a non-empty
+  preamble is kept). Section identity is canonical path + heading path
+  + occurrence index, so repeated headings stay distinct. Referenced
+  rollout-summary filenames become note references; a section takes
+  its project from the referenced rollout summaries' recorded cwd
+  (evidence `rollout-header`), or stays Unknown.
+- **`memory_summary.md`** is the *overview*: split at H2, labelled
+  global rather than assigned to one project.
+- **`raw_memories.md`** is *raw*: split at `## Thread` headings, with
+  the thread ID read from the heading's backticks.
+- **`rollout_summaries/*.md`** are *supporting*: a leading
+  `key: value` header (`thread_id`, `updated_at`, `rollout_path`,
+  `cwd`) is parsed before the first heading; the recorded cwd is the
+  project (evidence `rollout-header`) and `updated_at` the recorded
+  time.
+- **`extensions/*/notes/*.md`** are supporting;
+  `extensions/*/instructions.md` and everything under `skills/` are
+  skipped entirely, as is `.git`. Any other root-level `.md` file is a
+  supporting whole-document fallback.
+- Non-UTF-8 content is replaced with the replacement character and
+  noted on the document; CRLF and a leading BOM are tolerated.
+
 ## Shared guarantees
 
 - Source logs are opened read-only and never written.
