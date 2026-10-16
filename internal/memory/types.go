@@ -45,7 +45,7 @@ type Document struct {
 	Status          string // ok, unreadable, truncated, unsupported, outside-root
 	StatusDetail    string
 	ProjectCWD      string
-	ProjectEvidence string // session-association, rollout-header, global, unknown
+	ProjectEvidence string // session-association, rollout-header, directory-name, global, unknown
 }
 
 // Reference is one link or identifier recorded inside an entry.

@@ -778,6 +778,8 @@ func memEvidenceLabel(evidence string) string {
 		return "session association"
 	case "rollout-header":
 		return "recorded rollout directory"
+	case "directory-name":
+		return "directory name"
 	case "global":
 		return "recorded as global"
 	default:

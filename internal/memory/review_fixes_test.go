@@ -148,6 +148,73 @@ func TestClaudeAssociationFromSessionLogPeek(t *testing.T) {
 	}
 }
 
+// encodeClaudeDir mirrors Claude Code's project-directory naming
+// (every non-alphanumeric byte of the cwd becomes a dash) so tests
+// can build realistic stores under a temporary tree.
+func encodeClaudeDir(cwd string) string {
+	b := []byte(cwd)
+	for i, c := range b {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			b[i] = '-'
+		}
+	}
+	return string(b)
+}
+
+func TestClaudeAssociationFromDirectoryName(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "repos", "adrian-laptop")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Memory-only store: no session logs, no index association.
+	projDir := filepath.Join(base, "projects", encodeClaudeDir(project))
+	writeFile(t, filepath.Join(projDir, "memory", "machine.md"), "# Machine note\n\nFictional.\n")
+	roots := []memory.Root{{Provider: model.ProviderClaudeCode, Path: filepath.Join(base, "projects")}}
+
+	cat := load(t, memory.Options{Roots: roots})
+	got := byTitle(cat, "Machine note")
+	if len(got) != 1 || got[0].ProjectCWD != project || got[0].ProjectEvidence != "directory-name" {
+		t.Fatalf("directory-name association failed: %+v (want cwd %s)", got, project)
+	}
+	// The decoded project is still excludable.
+	cat = load(t, memory.Options{Roots: roots, Excluded: func(p string) bool { return p == project }})
+	if len(byTitle(cat, "Machine note")) != 0 {
+		t.Error("excluded decoded project memories resurfaced")
+	}
+}
+
+func TestClaudeDirectoryNameAmbiguousStaysUnknown(t *testing.T) {
+	base := t.TempDir()
+	// Both readings of the encoded name exist on disk.
+	for _, p := range []string{filepath.Join(base, "a-b", "c"), filepath.Join(base, "a", "b-c")} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	projDir := filepath.Join(base, "projects", encodeClaudeDir(filepath.Join(base, "a-b", "c")))
+	writeFile(t, filepath.Join(projDir, "memory", "note.md"), "# Ambiguous note\n\nFictional.\n")
+	roots := []memory.Root{{Provider: model.ProviderClaudeCode, Path: filepath.Join(base, "projects")}}
+	cat := load(t, memory.Options{Roots: roots})
+	got := byTitle(cat, "Ambiguous note")
+	if len(got) != 1 || got[0].ProjectCWD != "" || got[0].ProjectEvidence != "unknown" {
+		t.Fatalf("ambiguous directory name must stay Unknown: %+v", got)
+	}
+}
+
+func TestClaudeDirectoryNameMissingStaysUnknown(t *testing.T) {
+	base := t.TempDir()
+	// The encoded path does not exist on disk (project moved away).
+	projDir := filepath.Join(base, "projects", encodeClaudeDir(filepath.Join(base, "gone", "project")))
+	writeFile(t, filepath.Join(projDir, "memory", "note.md"), "# Gone note\n\nFictional.\n")
+	roots := []memory.Root{{Provider: model.ProviderClaudeCode, Path: filepath.Join(base, "projects")}}
+	cat := load(t, memory.Options{Roots: roots})
+	got := byTitle(cat, "Gone note")
+	if len(got) != 1 || got[0].ProjectCWD != "" || got[0].ProjectEvidence != "unknown" {
+		t.Fatalf("unverifiable directory name must stay Unknown: %+v", got)
+	}
+}
+
 func TestRolloutEvidenceScopedPerRoot(t *testing.T) {
 	dir := t.TempDir()
 	for _, tc := range []struct{ name, cwd, title string }{

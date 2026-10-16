@@ -70,7 +70,71 @@ func (s claudeStore) project(ctx context.Context, opts Options) (cwd, evidence s
 	if cwd := peekClaudeProjectCWD(ctx, s.projectDir); cwd != "" {
 		return cwd, "session-association"
 	}
+	// A memory-only project directory (its session logs rotated
+	// away) still records the cwd in its own encoded name.
+	if cwd := decodeClaudeProjectDir(ctx, filepath.Base(s.projectDir)); cwd != "" {
+		return cwd, "directory-name"
+	}
 	return "", "unknown"
+}
+
+// decodeClaudeProjectDir recovers the cwd encoded in a Claude
+// project directory name, where every non-alphanumeric byte of
+// the cwd became a dash. The encoding is lossy — a dash may have
+// been a path separator or part of a name — so a reading is
+// accepted only when exactly one existing directory on disk
+// encodes to the name; ambiguous or unverifiable names stay
+// Unknown rather than guess a project.
+func decodeClaudeProjectDir(ctx context.Context, name string) string {
+	if name == "" || name[0] != '-' {
+		return ""
+	}
+	found := ""
+	count := 0
+	var walk func(dir, rest string, depth int)
+	walk = func(dir, rest string, depth int) {
+		if count > 1 || depth > 32 || ctx.Err() != nil {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			step := "-" + encodeClaudeSegment(e.Name())
+			if !strings.HasPrefix(rest, step) {
+				continue
+			}
+			next := filepath.Join(dir, e.Name())
+			if len(step) == len(rest) {
+				count++
+				found = next
+				continue
+			}
+			walk(next, rest[len(step):], depth+1)
+			if count > 1 {
+				return
+			}
+		}
+	}
+	walk(string(filepath.Separator), name, 0)
+	if count == 1 {
+		return found
+	}
+	return ""
+}
+
+func encodeClaudeSegment(name string) string {
+	b := []byte(name)
+	for i, c := range b {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			b[i] = '-'
+		}
+	}
+	return string(b)
 }
 
 // peekClaudeProjectCWD reads the recorded working directory from

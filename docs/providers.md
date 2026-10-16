@@ -78,8 +78,11 @@ written, and no git command is run against a memory store.
   example after an exclusion removed its rows), a bounded peek at
   that project directory's session logs (at most 3 regular
   `.jsonl` files, each at most 256 KiB / 100 lines) supplies the
-  same recorded cwd. Without either, the project is Unknown; encoded
-  directory names are never decoded into a guessed path.
+  same recorded cwd. When the project directory holds no session
+  logs either, the encoded directory name is decoded against the
+  filesystem (evidence `directory-name`): a reading is accepted
+  only when exactly one existing directory encodes to the name.
+  Without any of these, the project is Unknown rather than guessed.
 
 ### Codex memory
 
