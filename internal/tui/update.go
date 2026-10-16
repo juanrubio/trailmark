@@ -64,6 +64,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.removeAbsentSessions(msg.sessions)
+		m.refreshScannedDetail()
 		if sessionsSignature(msg.sessions) != sessionsSignature(m.sessions) {
 			m.pending = msg.sessions
 			m.hasPending = true
@@ -193,6 +194,12 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 
 func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 	switch s {
+	case "e":
+		m.workExpanded = !m.workExpanded
+		m.workReveal = m.overviewFind.query == ""
+		m.overviewFind.current = 0
+		m.overviewFind.reveal = m.overviewFind.query != ""
+		m.normalizeOverviewScroll()
 	case "/":
 		m.normalizeOverviewScroll()
 		m.overviewFind.editing = true
@@ -445,18 +452,35 @@ func (m *appModel) removeAbsentSessions(fresh []index.SessionRow) {
 	}
 }
 
+// refreshScannedDetail reloads overview-only metadata after indexing even when
+// card rows did not change. Keep cached detail and interaction state on failure.
+func (m *appModel) refreshScannedDetail() {
+	c, ok := m.selected()
+	if !ok || m.deps.overview == nil {
+		return
+	}
+	ov, err := m.deps.overview(m.ctx, c.row.SourcePath)
+	if err != nil || ov == nil {
+		return
+	}
+	m.detail = ov
+	m.detailFor = c.row.SourcePath
+}
+
 // refreshDetail loads the selected session's overview synchronously;
 // index reads are local and bounded to one session's messages.
 func (m *appModel) refreshDetail() {
 	c, ok := m.selected()
 	if !ok {
 		m.overviewFind = overviewFindState{}
+		m.workExpanded = false
 		m.detail = nil
 		m.detailFor = ""
 		return
 	}
 	if m.overviewFind.source != c.row.SourcePath {
 		m.overviewFind = overviewFindState{source: c.row.SourcePath}
+		m.workExpanded = false
 	}
 	if m.detailFor == c.row.SourcePath && m.detail != nil {
 		return

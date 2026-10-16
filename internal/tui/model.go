@@ -112,6 +112,8 @@ type appModel struct {
 	detail                 *index.Overview
 	detailFor              string
 	focus                  focusPane
+	workReveal             bool
+	workExpanded           bool
 	overviewOpen           bool // narrow full-width overview
 	quitSelected           bool // Cancel is the default choice
 	overlay                overlayKind

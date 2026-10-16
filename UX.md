@@ -129,6 +129,14 @@ Label completion claims **Agent reported** and tool evidence **Recorded tool res
 
 Purpose quality is central to acceptance: a list full of IDs, setup text, or indistinguishable “continue” labels fails the recognition goal even if the parser is correct. Use the PRD recognition tasks to evaluate this before adding more providers or generated summaries.
 
+### Recorded session details
+
+After the initial request and latest exchange, the scrollable Overview shows recorded models and reasoning efforts, Git context, token usage, and latest-turn outcome/timing. Keep the purpose/path and conversation excerpts first and continuation actions pinned. Multiple observed models or efforts remain visible; Git labels describe the log's recorded state rather than the current checkout.
+
+Input token totals include cache reads/writes. Cache values are subsets of input, and reasoning is a subset of output; do not add these breakdowns to totals a second time. Display missing values as **Unavailable**, distinguish them from recorded zero, and qualify usage that may include inherited history. Duration is a recorded measurement, not elapsed time since the session began. A completed turn does not establish task success or current process status.
+
+The **Recorded work** section starts collapsed. With Overview focused, `e` expands/collapses recorded file changes and command results. Show bounds and missing coverage explicitly. Expansion does not select a different session or expand its child sessions, and changing sessions resets it. Overview find includes metadata and currently expanded work; toggling the section recomputes matches and clamps the scroll position. Existing gutters, themes, page navigation, and no-color behavior apply to these details.
+
 ### Find within the overview
 
 With the overview focused (Enter from the list), `/` opens a local
@@ -190,7 +198,7 @@ Show only relevant keys in each view, with full help available through `?`. A fo
 | `r` / `f` / `n` | Prepare resume / fork / clean session. | No continuation shortcuts while reading; return to overview. |
 | `]` / `[` | Focused overview: next / previous local match. | Next / previous match. |
 | `c` | Copy menu: directory or available context. | Copy selected message/exchange with provenance. |
-| `e` | Expand/collapse explicit child sessions for selected parent. | No action. |
+| `e` | List: expand/collapse explicit child sessions. Focused overview: expand/collapse recorded work. | Transcript: expand/collapse tool activity. |
 | `R` | Refresh and apply the latest session ordering. | Refresh available from home after returning. |
 | `,` | Sources/settings: theme, roots, exclusions, scan status, database size, cache controls. | Return to home for settings. |
 | `?` | Contextual help. | Contextual help. |

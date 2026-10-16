@@ -23,6 +23,7 @@ See what you worked on over the last few days, recognize each session's purpose 
 - Switch between all projects and the current project while keeping repository and worktree context visible.
 - Filter by harness with `h`: All harnesses, Codex, or Claude Code. Combine it with time and project filters; the same scope applies to transcript-content search.
 - Show a purpose label from the native title or a clearly labeled request excerpt, plus the latest substantive exchange. An agent's completion claim is not proof of success.
+- Inspect recorded models, reasoning effort, Git context, token usage, and latest-turn outcome in the Overview. Press `e` with Overview focused to expand recorded file and command activity; missing provider data is explicitly unavailable.
 - Present resume, fork, and clean-session choices with their history behavior and exact target directory. The first release prepares/copies validated native commands where supported; it does not launch agents.
 - Read transcripts, search their contents with matching snippets and passage navigation, and explicitly copy selected context with its source reference.
 - Keep source logs read-only and session data on-device, with exclusion controls, cache clearing, and visible indexing status.

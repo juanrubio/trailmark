@@ -6,6 +6,7 @@ package index
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,7 +22,7 @@ import (
 
 // ParserVersion identifies the extraction logic that produced the
 // indexed rows. Bumping it forces a reindex of unchanged files.
-const ParserVersion = 2
+const ParserVersion = 3
 
 // Index is the derived-data store.
 type Index struct {
@@ -112,6 +113,9 @@ func (ix *Index) migrate(ctx context.Context) error {
 	if _, err := ix.db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 		return fmt.Errorf("migrate parser_version: %w", err)
 	}
+	if _, err := ix.db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("migrate metadata: %w", err)
+	}
 	return nil
 }
 
@@ -152,6 +156,10 @@ func (ix *Index) FileState(ctx context.Context, sourcePath string) (size int64, 
 
 // Upsert replaces the indexed copy of one parsed session atomically.
 func (ix *Index) Upsert(ctx context.Context, s *model.Session, size int64, mtime time.Time) error {
+	metadata, err := json.Marshal(s.Metadata)
+	if err != nil {
+		return fmt.Errorf("encode metadata: %w", err)
+	}
 	tx, err := ix.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin upsert %s: %w", s.SourcePath, err)
@@ -165,18 +173,18 @@ func (ix *Index) Upsert(ctx context.Context, s *model.Session, size int64, mtime
 		return fmt.Errorf("clear fts %s: %w", s.SourcePath, err)
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO sessions
-		(source_path, provider, native_id, store, title, purpose, purpose_origin, cwd, parent_id, forked_from, sidechain, started_at, last_activity, partial, parse_errors, file_size, file_mtime, parser_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(source_path, provider, native_id, store, title, purpose, purpose_origin, cwd, parent_id, forked_from, sidechain, started_at, last_activity, partial, parse_errors, file_size, file_mtime, parser_version,metadata_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
 		ON CONFLICT(source_path) DO UPDATE SET
 			provider=excluded.provider, native_id=excluded.native_id, store=excluded.store,
 			title=excluded.title, purpose=excluded.purpose, purpose_origin=excluded.purpose_origin,
 			cwd=excluded.cwd, parent_id=excluded.parent_id, forked_from=excluded.forked_from,
 			sidechain=excluded.sidechain, started_at=excluded.started_at, last_activity=excluded.last_activity,
 			partial=excluded.partial, parse_errors=excluded.parse_errors,
-			file_size=excluded.file_size, file_mtime=excluded.file_mtime, parser_version=excluded.parser_version`,
+			file_size=excluded.file_size, file_mtime=excluded.file_mtime, parser_version=excluded.parser_version,metadata_json=excluded.metadata_json`,
 		s.SourcePath, string(s.Provider), s.ID, s.Store, s.Title, s.Purpose, string(s.PurposeOrigin),
 		s.CWD, s.ParentID, s.ForkedFromID, boolInt(s.Sidechain), unixOrNil(s.StartedAt), unixOrNil(s.LastActivityAt),
-		boolInt(s.Partial), s.ParseErrors, size, mtime.UnixNano(), ParserVersion)
+		boolInt(s.Partial), s.ParseErrors, size, mtime.UnixNano(), ParserVersion, string(metadata))
 	if err != nil {
 		return fmt.Errorf("upsert session %s: %w", s.SourcePath, err)
 	}
@@ -305,6 +313,7 @@ type Excerpt struct {
 
 // Overview carries the selected-session detail shown beside the list.
 type Overview struct {
+	Metadata        model.SessionMetadata
 	Session         SessionRow
 	InitialRequest  string
 	LatestUser      string
@@ -317,15 +326,19 @@ type Overview struct {
 // Overview loads one session's row plus its initial request and
 // latest substantive exchange from the index.
 func (ix *Index) Overview(ctx context.Context, sourcePath string) (*Overview, error) {
-	row := ix.db.QueryRowContext(ctx, `SELECT source_path, provider, native_id, title, purpose, purpose_origin, cwd, store, parent_id, forked_from, sidechain, last_activity, partial
+	row := ix.db.QueryRowContext(ctx, `SELECT source_path, provider, native_id, title, purpose, purpose_origin, cwd, store, parent_id, forked_from, sidechain, last_activity, partial,metadata_json
 		FROM sessions WHERE source_path = ?`, sourcePath)
 	var o Overview
+	var metadata string
 	var provider, origin string
 	var last sql.NullInt64
 	var partial, sidechain int
 	r := &o.Session
-	if err := row.Scan(&r.SourcePath, &provider, &r.ID, &r.Title, &r.Purpose, &origin, &r.CWD, &r.Store, &r.ParentID, &r.ForkedFrom, &sidechain, &last, &partial); err != nil {
+	if err := row.Scan(&r.SourcePath, &provider, &r.ID, &r.Title, &r.Purpose, &origin, &r.CWD, &r.Store, &r.ParentID, &r.ForkedFrom, &sidechain, &last, &partial, &metadata); err != nil {
 		return nil, fmt.Errorf("load overview %s: %w", sourcePath, err)
+	}
+	if err := json.Unmarshal([]byte(metadata), &o.Metadata); err != nil {
+		return nil, fmt.Errorf("decode overview metadata: %w", err)
 	}
 	r.Provider = model.Provider(provider)
 	r.PurposeOrigin = model.PurposeOrigin(origin)

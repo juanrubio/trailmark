@@ -135,7 +135,7 @@ func (m *appModel) renderFooter(w int) string {
 		if find := m.overviewFindFooter(); find != "" {
 			lines = append(lines, m.styles().path.Render(find))
 		}
-		lines = append(lines, m.shortcutHints("  ", "↑↓/jk", "Scroll", "PgUp/PgDown", "Page", "/", "Find", "[ ]", "Matches", "Esc", "Back", "?", "Help"))
+		lines = append(lines, m.shortcutHints("  ", "↑↓/jk", "Scroll", "PgUp/PgDown", "Page", "/", "Find", "[ ]", "Matches", "e", "Work", "Esc", "Back", "?", "Help"))
 		return m.rule(w) + "\n" + m.footerLines(lines, w)
 	}
 	if w >= 110 {
@@ -323,6 +323,25 @@ func (m *appModel) renderOverview(w, h int) string {
 	} else {
 		lines = append(lines, "Latest exchange unavailable")
 	}
+	metadata := model.SessionMetadata{}
+	if ov != nil {
+		metadata = ov.Metadata
+	}
+	lines = append(lines, "", m.styles().muted.Render("Recorded session details"))
+	for _, text := range overviewMetadataLines(metadata, row.Provider) {
+		appendBlock(text, wrap(m.styleRecordedLine(text, false), w), 0)
+	}
+	workTitle := "[e] Recorded work · collapsed"
+	if m.workExpanded {
+		workTitle = "[e] Recorded work · expanded"
+	}
+	workHeading := len(lines) + 1
+	lines = append(lines, "", m.styles().muted.Render(workTitle))
+	if m.workExpanded {
+		for _, text := range overviewWorkLines(metadata.Work) {
+			appendBlock(text, wrap(m.styleRecordedLine(text, true), w), 0)
+		}
+	}
 	if row.ParentID != "" {
 		lines = append(lines, "", "Child session of "+row.ParentID)
 	}
@@ -334,9 +353,19 @@ func (m *appModel) renderOverview(w, h int) string {
 	for _, line := range wrap("Opens command preparation; no agent is launched.", w) {
 		actions = append(actions, m.styles().muted.Render(line))
 	}
+	if w < 58 {
+		actions[2] = m.styles().accent.Render("[r] Resume  [f] Fork  [n] Clean session")
+	}
+	if h < 8 {
+		actions = []string{m.rule(w), m.styles().accent.Render("[r] Resume  [f] Fork  [n] Clean")}
+	}
 	bodyH := max(1, h-len(actions))
 	m.overviewViewportHeight = bodyH
 	lines = m.applyOverviewFind(lines, blocks, bodyH)
+	if m.workReveal {
+		m.overviewScroll = workHeading
+		m.workReveal = false
+	}
 	m.overviewScroll = scrollStart(len(lines), m.overviewScroll, bodyH)
 	lines = lines[m.overviewScroll:]
 	return fitPane(windowLines(lines, 0, bodyH), w, bodyH) + "\n" + strings.Join(actions, "\n")
@@ -405,7 +434,7 @@ func (m *appModel) viewHelp(w, h int) string {
 		"h            Harness selector",
 		"/            Filter list or find in overview/transcript",
 		"[ / ]        Previous / next find match",
-		"e            Expand or collapse child sessions",
+		"e            Expand children / overview work / transcript tools",
 		"R            Apply refreshed session ordering",
 		"t            Transcript at the latest exchange",
 		"T            Transcript at the initial request",

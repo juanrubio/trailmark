@@ -53,6 +53,7 @@ type Session struct {
 	Sidechain      bool   // provider marked the session as a sidechain/subagent run
 	StartedAt      *time.Time
 	LastActivityAt *time.Time
+	Metadata       SessionMetadata
 	Messages       []Message
 	Partial        bool // log contained malformed or truncated records
 	ParseErrors    int
@@ -68,4 +69,32 @@ type Capability struct {
 	ForkSupported  bool
 	CleanTemplate  string
 	Notes          string
+}
+
+// SessionMetadata contains only recorded evidence. Nil numeric fields and
+// empty strings mean unknown; a recorded zero remains distinguishable.
+type SessionMetadata struct {
+	Models           []string
+	ReasoningEfforts []string
+	Git              GitMetadata
+	Tokens           TokenUsage
+	Outcome          TurnOutcome
+	Work             WorkSummary
+}
+type GitMetadata struct{ Branch, Commit, Repository string }
+type TokenUsage struct {
+	Input, UncachedInput, CacheRead, CacheWrite, Output, Reasoning *int64
+	Scope                                                          string
+}
+type TurnOutcome struct {
+	Status     string // completed, interrupted, error, unfinished, or unknown (empty)
+	DurationMS *int64
+}
+type WorkSummary struct {
+	ChangedFiles                 []string
+	Truncated                    bool
+	CommandCount, FailedCommands *int64
+	LatestCommand                string
+	LatestExitCode               *int
+	LatestCommandStatus          string
 }

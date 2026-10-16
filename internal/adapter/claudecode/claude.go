@@ -79,6 +79,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 		PurposeOrigin: model.OriginUnavailable,
 	}
 	seq := 0
+	metadata := metadataReader{}
 	validRecords, nativeEvidence := 0, false
 	err = adapter.ScanLines(f, func(line []byte, lineNo int) error {
 		if err := ctx.Err(); err != nil {
@@ -93,6 +94,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 			s.Partial = true
 			return nil
 		}
+		metadata.read(s, line, rec)
 		validRecords++
 		if rec.SessionID != "" {
 			nativeEvidence = true
@@ -145,6 +147,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 	if validRecords > 0 && !nativeEvidence && s.ParseErrors == 0 {
 		return nil, adapter.ErrNotSession
 	}
+	metadata.finish(s)
 	adapter.DerivePurpose(s)
 	return s, nil
 }

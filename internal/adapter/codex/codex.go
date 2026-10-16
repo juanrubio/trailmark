@@ -89,6 +89,7 @@ type responseItem struct {
 	Role      string          `json:"role"`
 	Name      string          `json:"name"`
 	CallID    string          `json:"call_id"`
+	Input     string          `json:"input"`
 	Arguments string          `json:"arguments"`
 	Output    string          `json:"output"`
 	Content   json.RawMessage `json:"content"`
@@ -115,6 +116,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 		PurposeOrigin: model.OriginUnavailable,
 	}
 	seq := 0
+	metadata := metadataReader{}
 	err = adapter.ScanLines(f, func(line []byte, lineNo int) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -132,6 +134,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 		if ts != nil && rec.Type == "response_item" {
 			s.LastActivityAt = ts
 		}
+		metadata.read(s, rec)
 		loc := model.Locator{SourcePath: path, Line: lineNo}
 		switch rec.Type {
 		case "session_meta":
@@ -209,7 +212,11 @@ func convertItem(rec record, loc model.Locator, ts *time.Time, seq *int) ([]mode
 	case "function_call", "custom_tool_call":
 		*seq++
 		loc.RecordID = recordID
-		callText := strings.TrimSpace(item.Name + " " + item.Arguments)
+		arguments := item.Arguments
+		if item.Type == "custom_tool_call" {
+			arguments = item.Input
+		}
+		callText := strings.TrimSpace(item.Name + " " + arguments)
 		return []model.Message{{Seq: *seq, Role: "tool", Kind: "tool_call", Text: callText, Timestamp: ts, Locator: loc}}, true
 	case "function_call_output", "custom_tool_call_output":
 		*seq++

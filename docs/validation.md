@@ -219,3 +219,35 @@ message pages in both directions. Edge tests exercise enough repeated
 one-line movement to reach both ends and confirm immediate reversal.
 Footer/help and the keyboard specification describe the three actions.
 `make check build` passed; the binary was rebuilt.
+
+### Recorded session metadata and work summary
+
+Adapter tests cover complete custom-tool inputs, distinct models/efforts and
+recorded Git context, repeated Codex cumulative token snapshots, deduplicated
+Claude response usage, cache normalization, and reasoning/thinking counters.
+They distinguish zero from missing or invalid optional data, preserve readable
+conversation records when optional metadata is malformed, and avoid treating
+tool handoffs or token-limit stops as successful completed tasks. Work tests
+cover duplicate event IDs, signed command failures, unknown outcomes,
+successful-only file-change events, and bounded file/command summaries.
+
+Index tests verify metadata round trips, removal of stale metadata, additive
+migration of an actual pre-metadata schema, and reindexing of unchanged files
+with an older parser version. A TUI regression checks that successful scans
+refresh selected Overview metadata even when list rows do not change, while
+preserving selection, find, expansion and scroll state; scan/read failures
+retain cached details.
+
+TUI tests cover unavailable/zero counters, number grouping, focused `e`
+expansion and heading reveal, expanded-only work search, session-change reset,
+wrapping and pinned continuation actions at 40×12, 80×24 and 144×40. Synthetic
+dark/light ANSI previews were rendered and inspected for metadata and expanded
+work; this does not verify physical-terminal color fidelity.
+
+A read-only local-source check parsed three recent Codex sessions and all six
+genuine Claude sessions into a temporary index. All nine exposed recorded
+models, branches and input/output totals, with metadata unchanged by the index
+round trip. Codex supplied command summaries in all three and file changes in
+one. Six unrelated Claude telemetry files remained excluded. No private source
+content or live database copy was added to the repository. `make check build`
+passed and rebuilt `./trailmark`.

@@ -53,3 +53,50 @@ than simulated.
   unknown fields: bad records are counted, the session is marked
   partial, and other sessions still index.
 - Indexing and browsing make no network requests.
+
+## Recorded Overview metadata (2026-10-16)
+
+The Overview keeps these details after the purpose and conversation excerpts.
+They describe source records, not the current repository or a running process.
+Missing fields remain unavailable; a recorded zero is retained. The original
+session list stays purpose/project-first.
+
+| Detail | Codex | Claude Code |
+| --- | --- | --- |
+| Models and reasoning efforts | Distinct `turn_context.model` and effort values | Distinct assistant `message.model` and recorded effort values |
+| Git context | `session_meta.git` branch, commit hash, repository URL | Recorded `gitBranch`; no inferred commit or remote |
+| Token usage | Latest cumulative `event_msg.token_count.info.total_token_usage` or `token_usage_record.thread_token_usage` | Usage aggregated across unique assistant response identities; repeated snapshots replace/merge fields rather than adding another response |
+| Latest-turn outcome | Recorded task start, completion, interruption, or error; supplied `duration_ms` | Assistant stop reasons and explicit error/duration records when available; tool-use stops are not completed turns |
+| Recorded work | Deduplicated completed item events: successful file-change paths, command count, failure count and latest command/exit status | Unavailable when equivalent structured evidence is absent |
+
+Codex custom-tool calls use `input`, whereas function calls use `arguments`.
+Both inputs are retained as transcript text and become searchable after
+reindexing. This fixes tool entries that previously contained only a name.
+
+Input tokens are normalized to include cache reads and cache writes. Codex
+supplies cumulative input directly; Claude supplies uncached input plus cache
+read and creation counters. If those components are incomplete, preserve the
+known components without inventing a total. Reasoning/thinking tokens, when
+reported, are an output subset. Never sum repeated cumulative snapshots,
+add cache/reasoning subsets twice, or combine parent and child totals into a
+supposed exclusive session measurement. Usage scope text qualifies inherited
+history and incomplete data. These are recorded token counts, not calculated
+billing amounts.
+
+A new turn start invalidates a previous completion label. A token-limit stop
+is interrupted, and a start/tool handoff without a later completion is labeled
+as having no completion recorded. A completed turn is explicitly distinguished
+from successful completion of the user's task. Missing duration does not fall
+back to wall-clock time between the first and last log entries.
+
+Recorded work is collapsed until `e` is pressed with Overview focused. File
+paths come from successful structured change events, not prose mentions;
+commands come from structured completion events, not duplicate transcript
+outputs. The summary retains up to 100 distinct file paths and 1,000 characters
+of the latest command, with a truncation indicator. Failure totals remain
+unknown if an observed command lacks a usable outcome. Recorded work is not
+an exhaustive repository diff or proof that those files still exist.
+
+Metadata lives in the derived SQLite cache through an additive migration.
+Parser version 3 forces unchanged native logs to be reindexed at the next
+scan; no source files are rewritten and no manual cache deletion is required.
