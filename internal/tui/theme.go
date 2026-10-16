@@ -8,22 +8,45 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/juanrubio/trailmark/internal/config"
 )
 
 // Palettes follow the fictional UX mockups. Terminal background reports choose
 // the light palette; dark is the fallback for terminals without OSC 11 support.
-type palette struct{ panel, text, muted, accent, selection, path, separator, gold, ink string }
+type palette struct{ panel, text, muted, accent, selection, path, separator, gold, ink, raised, warning string }
 
-var darkPalette = palette{"#191e20", "#e5e9e4", "#a2aeae", "#ade6c2", "#253c32", "#b2d3dc", "#364144", "#ddc38c", "#24342d"}
-var lightPalette = palette{"#fafbf7", "#24342d", "#59685e", "#246941", "#dfeddf", "#315e70", "#c1c9bf", "#f2dcaa", "#24342d"}
+var darkPalette = palette{"#191e20", "#e5e9e4", "#a2aeae", "#ade6c2", "#253c32", "#b2d3dc", "#364144", "#ddc38c", "#24342d", "#202729", "#ddc38c"}
+var lightPalette = palette{"#fafbf7", "#24342d", "#59685e", "#246941", "#dfeddf", "#315e70", "#c1c9bf", "#f2dcaa", "#24342d", "#eef1e9", "#795b20"}
 
 type themeStyles struct{ base, accent, muted, heading, purpose, selected, path, rule, match, gold, raised lipgloss.Style }
 
-func newStyles(light, noColor bool) themeStyles {
-	p := darkPalette
-	if light {
-		p = lightPalette
+func themePalette(name string, light bool) palette {
+	switch config.NormalizeTheme(name) {
+	case "blue":
+		if light {
+			return palette{"#f6f9fe", "#20334b", "#52677b", "#215fa0", "#dfebfa", "#246663", "#bccbdc", "#f2dcaa", "#24342d", "#eaf0f9", "#795b20"}
+		}
+		return palette{"#171e29", "#e5edf5", "#a4b3c5", "#91c7ff", "#243c58", "#a8dcd7", "#35465c", "#ddc38c", "#24342d", "#202b3a", "#ddc38c"}
+	case "amber":
+		if light {
+			return palette{"#fdf9f1", "#3d3021", "#73634f", "#845000", "#f4e4c8", "#3d6b53", "#d6c8b1", "#f2d6bd", "#3d3021", "#f3ecdf", "#963b2d"}
+		}
+		return palette{"#242019", "#f0e8db", "#bdb09a", "#edc17a", "#473720", "#b8d2c2", "#514536", "#edb599", "#3d3021", "#30291f", "#f0a28b"}
+	default:
+		if light {
+			return lightPalette
+		}
+		return darkPalette
 	}
+}
+func (m *appModel) palette() palette { return themePalette(m.themeName, m.lightTheme) }
+
+func newStyles(light, noColor bool, names ...string) themeStyles {
+	name := "green"
+	if len(names) > 0 {
+		name = names[0]
+	}
+	p := themePalette(name, light)
 	base := lipgloss.NewStyle()
 	fg := func(hex string) lipgloss.Style {
 		if noColor {
@@ -31,17 +54,10 @@ func newStyles(light, noColor bool) themeStyles {
 		}
 		return base.Foreground(lipgloss.Color(hex))
 	}
-	st := themeStyles{gold: fg(p.gold), raised: fg(p.text), base: base, accent: fg(p.accent), muted: fg(p.muted), heading: fg(p.text).Bold(true), purpose: fg(p.text).Bold(true), selected: base.Bold(true), path: fg(p.path), rule: fg(p.separator), match: base.Bold(true)}
+	st := themeStyles{gold: fg(p.warning), raised: fg(p.text), base: base, accent: fg(p.accent), muted: fg(p.muted), heading: fg(p.text).Bold(true), purpose: fg(p.text).Bold(true), selected: base.Bold(true), path: fg(p.path), rule: fg(p.separator), match: base.Bold(true)}
 	if !noColor {
 		st.base = fg(p.text).Background(lipgloss.Color(p.panel))
-		if light {
-			st.gold = fg("#795b20")
-		}
-		raised := "#202729"
-		if light {
-			raised = "#eef1e9"
-		}
-		st.raised = fg(p.text).Background(lipgloss.Color(raised))
+		st.raised = fg(p.text).Background(lipgloss.Color(p.raised))
 		st.selected = fg(p.text).Background(lipgloss.Color(p.selection))
 		st.match = fg(p.ink).Background(lipgloss.Color(p.gold)).Bold(true)
 	}
@@ -49,10 +65,11 @@ func newStyles(light, noColor bool) themeStyles {
 }
 
 func (m *appModel) styles() themeStyles {
-	if m.theme == nil || m.themeLight != m.lightTheme || m.themeNoColor != m.noColor {
-		styles := newStyles(m.lightTheme, m.noColor)
+	if m.theme == nil || m.themeLight != m.lightTheme || m.themeNoColor != m.noColor || m.themeCachedName != config.NormalizeTheme(m.themeName) {
+		styles := newStyles(m.lightTheme, m.noColor, m.themeName)
 		m.theme = &styles
 		m.themeLight, m.themeNoColor = m.lightTheme, m.noColor
+		m.themeCachedName = config.NormalizeTheme(m.themeName)
 	}
 	return *m.theme
 }
@@ -119,10 +136,7 @@ func (m *appModel) paintBackground(s string, selected bool) string {
 	if m.noColor {
 		return s
 	}
-	p := darkPalette
-	if m.lightTheme {
-		p = lightPalette
-	}
+	p := m.palette()
 	bg := p.panel
 	if selected {
 		bg = p.selection
@@ -131,10 +145,7 @@ func (m *appModel) paintBackground(s string, selected bool) string {
 }
 
 func (m *appModel) restoreSurface(s, bg string) string {
-	p := darkPalette
-	if m.lightTheme {
-		p = lightPalette
-	}
+	p := m.palette()
 	code := func(hex string) string {
 		n, _ := strconv.ParseUint(strings.TrimPrefix(hex, "#"), 16, 32)
 		return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", n>>16, (n>>8)&255, n&255)

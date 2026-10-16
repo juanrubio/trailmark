@@ -22,6 +22,7 @@ type Root struct {
 // user-configured roots; detected defaults live in extraRoots and
 // are never persisted back as if the user had configured them.
 type Config struct {
+	Theme               string   `json:"theme,omitempty"`
 	Roots               []Root   `json:"roots,omitempty"`
 	Exclusions          []string `json:"exclusions,omitempty"`
 	DisableDefaultRoots bool     `json:"disable_default_roots,omitempty"`
@@ -112,6 +113,7 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("parse config %s: root for provider %q has an empty path", path, r.Provider)
 		}
 	}
+	cfg.Theme = NormalizeTheme(cfg.Theme)
 	if !cfg.DisableDefaultRoots {
 		cfg.extraRoots = DefaultRoots()
 	}
@@ -148,6 +150,9 @@ func (c *Config) Save() error {
 		}
 		merged[key] = data
 		return nil
+	}
+	if err := set("theme", NormalizeTheme(c.Theme)); err != nil {
+		return fmt.Errorf("encode config: %w", err)
 	}
 	if len(c.Roots) > 0 {
 		if err := set("roots", c.Roots); err != nil {
@@ -301,4 +306,14 @@ func Canonical(path string) string {
 		return filepath.Clean(path)
 	}
 	return c
+}
+
+// NormalizeTheme keeps absent or unsupported theme names on the default.
+func NormalizeTheme(name string) string {
+	switch name {
+	case "blue", "amber":
+		return name
+	default:
+		return "green"
+	}
 }

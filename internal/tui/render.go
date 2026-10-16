@@ -107,10 +107,7 @@ func (m *appModel) renderHeader(w int) string {
 	}
 	raised := m.styles().raised.Width(w).Render(line)
 	if !m.noColor {
-		bg := "#202729"
-		if m.lightTheme {
-			bg = "#eef1e9"
-		}
+		bg := m.palette().raised
 		raised = m.restoreSurface(raised, bg)
 	}
 	return raised + "\n" + m.rule(w)
@@ -176,10 +173,7 @@ func (m *appModel) panel(content string, w, h int) string {
 	}
 	style := lipgloss.NewStyle().Border(border).Padding(0, 1)
 	if !m.noColor {
-		p := darkPalette
-		if m.lightTheme {
-			p = lightPalette
-		}
+		p := m.palette()
 		style = style.Foreground(lipgloss.Color(p.text)).BorderForeground(lipgloss.Color(p.separator))
 	}
 	return style.Render(fitPane(content, max(1, w-4), max(1, h-2)))

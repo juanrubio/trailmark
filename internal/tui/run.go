@@ -265,3 +265,22 @@ func terminalEnvironment(env []string) []string {
 	}
 	return result
 }
+
+func (b *settingsBackend) Theme() string {
+	if b.cfg == nil {
+		return "green"
+	}
+	return config.NormalizeTheme(b.cfg.Theme)
+}
+func (b *settingsBackend) SetTheme(name string) error {
+	if b.cfg == nil {
+		return fmt.Errorf("configuration unavailable")
+	}
+	previous := b.cfg.Theme
+	b.cfg.Theme = config.NormalizeTheme(name)
+	if err := b.cfg.Save(); err != nil {
+		b.cfg.Theme = previous
+		return err
+	}
+	return nil
+}

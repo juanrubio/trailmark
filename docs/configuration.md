@@ -13,7 +13,8 @@ environment variable overrides the config directory.
     {"provider": "codex", "path": "/extra/codex/sessions"}
   ],
   "exclusions": ["/work/private-project"],
-  "disable_default_roots": false
+  "disable_default_roots": false,
+  "theme": "green"
 }
 ```
 
@@ -31,10 +32,17 @@ environment variable overrides the config directory.
 
 ## Terminal appearance
 
-Trailmark uses the [mockup palettes](../UX.md#palette) for dark and
-light terminals. It asks the terminal for its background color and
-chooses the matching palette; it falls back to dark if the terminal
-does not answer. There is no additional theme setting or CLI flag.
+Trailmark offers three color themes: **Green** (the original default),
+**Blue**, and **Amber**. Press `,` from the session list, select **Theme**,
+and press Enter to choose one. Enter saves and applies the choice; Esc
+cancels. The choice persists in Trailmark's config as `"theme": "green"`,
+`"blue"`, or `"amber"`. Missing or unrecognized values use Green.
+
+Each theme has dark and light variants. Trailmark asks the terminal for
+its background color and chooses the matching variant, falling back to
+dark when the terminal does not answer. Theme changes apply immediately
+without rescanning sessions. If saving fails, the existing theme remains
+active and settings reports the error. No theme CLI flag is needed.
 
 Set `NO_COLOR=1` to disable application colors. `TERM=dumb` also
 disables colors. Selection markers, labels, spacing, and separators

@@ -86,16 +86,17 @@ type appModel struct {
 	now           func() time.Time
 	scanCmd       tea.Cmd // background refresh command, may be nil
 
-	theme                    *themeStyles
-	themeLight, themeNoColor bool
-	ascii                    bool
-	lightTheme               bool
-	noColor                  bool
-	width, height            int
-	sessions                 []index.SessionRow
-	pending                  []index.SessionRow
-	hasPending               bool
-	partialCount             int
+	theme                      *themeStyles
+	themeName, themeCachedName string
+	themeLight, themeNoColor   bool
+	ascii                      bool
+	lightTheme                 bool
+	noColor                    bool
+	width, height              int
+	sessions                   []index.SessionRow
+	pending                    []index.SessionRow
+	hasPending                 bool
+	partialCount               int
 
 	manualWindow           bool // explicit time selections stay fixed across scope changes
 	windowDays             int  // 0 means All time; default 7
@@ -146,6 +147,9 @@ func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, ho
 		sessions:   sessions,
 		windowDays: 7,
 		expanded:   map[string]bool{},
+	}
+	if store, ok := deps.settings.(themeStore); ok {
+		m.themeName = store.Theme()
 	}
 	m.partialCount = countPartial(sessions)
 	m.chooseAutomaticWindow()

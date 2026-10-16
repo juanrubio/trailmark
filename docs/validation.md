@@ -177,3 +177,21 @@ existing unbroken clipboard-failure command fallback remains an explicit
 exception to fixed-width rendering. `make check build` passed, including
 scroll-boundary, resize, 850-message paging, overview-search, and copy tests.
 These previews do not replace physical-terminal acceptance.
+
+
+### Selectable color themes
+
+Green remains the default; Blue and Amber add complete dark/light palettes.
+Inspected 120×40 ANSI previews of both new themes in both variants and the
+theme chooser. Selected cards, header surfaces, continuation actions, paths,
+status hints, and warnings use the chosen colors without background gaps.
+A numeric check of the intended body, secondary, accent, path, warning,
+selected-body, and search-match text pairs yielded contrast ratios above
+5.5:1 in all six palettes; terminal color approximation remains unverified.
+
+Automated tests cover saving and reloading a theme, preserving unrelated
+configuration fields, unknown-name fallback, cancelling without a write,
+save failure preserving the prior choice, and changing themes without a
+rescan. Rendering tests cover all three themes in light/dark modes at
+144×40, 80×24, and 40×12, including transcript and chooser gutters and
+NO_COLOR/dumb behavior. `make check build` passed; the binary was rebuilt.

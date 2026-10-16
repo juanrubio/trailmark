@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/juanrubio/trailmark/internal/config"
 	"github.com/juanrubio/trailmark/internal/model"
 )
 
@@ -43,6 +44,22 @@ type settingsStore interface {
 	ClearCache(ctx context.Context) error
 }
 
+type themeStore interface {
+	Theme() string
+	SetTheme(name string) error
+}
+
+var themeChoices = []struct{ name, label string }{{"green", "Green"}, {"blue", "Blue"}, {"amber", "Amber"}}
+
+func themeLabel(name string) string {
+	for _, choice := range themeChoices {
+		if choice.name == config.NormalizeTheme(name) {
+			return choice.label
+		}
+	}
+	return "Green"
+}
+
 type settingsItem struct {
 	kind      string // root, exclusion, action
 	label     string
@@ -52,17 +69,18 @@ type settingsItem struct {
 }
 
 type settingsState struct {
-	items     []settingsItem
-	cursor    int
-	mode      string // list, input, confirm
-	inputKind string // root or exclusion
-	input     string
-	provider  model.Provider
-	confirm   string
-	onConfirm func() string
-	status    string
-	roots     []RootInfo
-	settings  SettingsStatus
+	items       []settingsItem
+	cursor      int
+	mode        string // list, input, confirm, theme
+	themeCursor int
+	inputKind   string // root or exclusion
+	input       string
+	provider    model.Provider
+	confirm     string
+	onConfirm   func() string
+	status      string
+	roots       []RootInfo
+	settings    SettingsStatus
 }
 
 func (m *appModel) openSettings() {
@@ -85,7 +103,7 @@ func (m *appModel) reloadSettings() {
 		st.settings = status
 	}
 	st.items = nil
-	st.items = append(st.items, settingsItem{kind: "action", label: "Rescan now", action: "rescan"})
+	st.items = append(st.items, settingsItem{kind: "action", label: "Rescan now", action: "rescan"}, settingsItem{kind: "action", label: "Theme: " + themeLabel(m.themeName), action: "theme"})
 	for _, r := range roots {
 		label := providerLabel(r.Provider) + "  " + r.Path
 		if r.Configured {
@@ -115,6 +133,32 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	st := m.settings
 	s := msg.String()
 	switch st.mode {
+	case "theme":
+		switch s {
+		case "esc", "q":
+			st.mode = "list"
+			st.status = ""
+		case "j", "down":
+			st.themeCursor = min(len(themeChoices)-1, st.themeCursor+1)
+		case "k", "up":
+			st.themeCursor = max(0, st.themeCursor-1)
+		case "enter":
+			store, ok := m.deps.settings.(themeStore)
+			if !ok {
+				st.status = "Could not save theme: configuration unavailable"
+				break
+			}
+			name := themeChoices[st.themeCursor].name
+			if err := store.SetTheme(name); err != nil {
+				st.status = "Could not save theme: " + err.Error()
+				break
+			}
+			m.themeName = name
+			st.mode = "list"
+			st.status = "Theme saved: " + themeLabel(name)
+			m.reloadSettings()
+		}
+		return m, nil
 	case "input":
 		switch s {
 		case "esc":
@@ -183,6 +227,15 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if st.cursor >= 0 && st.cursor < len(st.items) {
 			switch st.items[st.cursor].action {
+			case "theme":
+				st.mode = "theme"
+				st.status = ""
+				for i, choice := range themeChoices {
+					if choice.name == config.NormalizeTheme(m.themeName) {
+						st.themeCursor = i
+						break
+					}
+				}
 			case "rescan":
 				return m, m.rescanCmd(true)
 			case "add-root":
@@ -302,6 +355,26 @@ func (m *appModel) rescanCmd(apply bool) tea.Cmd {
 // viewSettings renders the sources/settings view.
 func (m *appModel) viewSettings(w, h int) string {
 	st := m.settings
+	if st.mode == "theme" {
+		lines := []string{m.styles().heading.Render("Theme"), "", m.styles().path.Render("Current: " + themeLabel(m.themeName)), ""}
+		for i, choice := range themeChoices {
+			label := choice.label
+			if choice.name == config.NormalizeTheme(m.themeName) {
+				label += " (current)"
+			}
+			row := "  " + label
+			if i == st.themeCursor {
+				row = m.paintBackground(m.styles().selected.Width(w).Render(m.styles().accent.Render(m.selectionMarker())+label), true)
+			}
+			lines = append(lines, row)
+		}
+		if st.status != "" {
+			lines = append(lines, "", m.styles().gold.Render(st.status))
+		}
+		footer := m.rule(w) + "\n" + m.shortcutHints("  ", "↑↓/jk", "Select", "Enter", "Save", "Esc", "Cancel")
+		return fitPane(strings.Join(lines, "\n"), w, max(1, h-lipgloss.Height(footer))) + "\n" + footer
+	}
+
 	lines := []string{m.styles().heading.Render("Sources and settings"), ""}
 	unavailable := 0
 	for _, r := range st.roots {

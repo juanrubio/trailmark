@@ -17,6 +17,7 @@ See what you worked on over the last few days, recognize each session's purpose 
 - Linux, with native Claude Code and Codex session logs.
 - Launch `trailmark` into the last seven days, grouped by day and ordered by last session activity. If that scope is empty, automatically try 30 days, then All time, to show available history.
 - Use the time selector to show Today, 3 days, 7 days, 30 days, or All time. An explicit time choice stays fixed; otherwise choosing a project or harness automatically finds the smallest populated window from 7 days, 30 days, and All time. The seven-day default does not limit retained history.
+- Choose Green, Blue, or Amber in settings (`,` → Theme); the choice is saved and adapts to light/dark terminals.
 - Keep the launch interface to `trailmark`, `--help`, and `--version`; normal operations live inside the TUI.
 - Scan compact session cards that give purpose and project/path visual priority, with an adjacent overview where space permits.
 - Switch between all projects and the current project while keeping repository and worktree context visible.

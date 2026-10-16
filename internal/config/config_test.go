@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/juanrubio/trailmark/internal/config"
@@ -129,5 +130,35 @@ func TestEffectiveRootsHonorDisableFlagInSession(t *testing.T) {
 	cfg.DisableDefaultRoots = true
 	if got := len(cfg.EffectiveRoots()); got != 0 {
 		t.Errorf("effective roots after disabling defaults = %d (was %d), want 0 without reload", got, before)
+	}
+}
+
+func TestThemeConfigPersistenceAndFallback(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRAILMARK_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"theme":"unknown-future","disable_default_roots":true,"exclusions":["/fictional/private"],"custom":{"keep":42}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme != "green" {
+		t.Fatal("unknown theme did not fall back to Green")
+	}
+	for _, theme := range []string{"blue", "amber", "green"} {
+		cfg.Theme = theme
+		if err := cfg.Save(); err != nil {
+			t.Fatal(err)
+		}
+		reloaded, err := config.Load()
+		if err != nil || reloaded.Theme != theme || len(reloaded.Exclusions) != 1 || !reloaded.DisableDefaultRoots {
+			t.Fatalf("theme save lost configuration: %+v %v", reloaded, err)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil || !strings.Contains(string(raw), `"keep": 42`) {
+			t.Fatal("theme save lost unknown fields")
+		}
 	}
 }

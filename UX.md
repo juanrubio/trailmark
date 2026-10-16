@@ -192,7 +192,7 @@ Show only relevant keys in each view, with full help available through `?`. A fo
 | `c` | Copy menu: directory or available context. | Copy selected message/exchange with provenance. |
 | `e` | Expand/collapse explicit child sessions for selected parent. | No action. |
 | `R` | Refresh and apply the latest session ordering. | Refresh available from home after returning. |
-| `,` | Sources/settings: roots, exclusions, scan status, cache controls. | Return to home for settings. |
+| `,` | Sources/settings: theme, roots, exclusions, scan status, cache controls. | Return to home for settings. |
 | `?` | Contextual help. | Contextual help. |
 | `q` | Ask to quit from home; close a nested overview first. | Return from the reading/search view. |
 
@@ -229,7 +229,20 @@ The 2026-10-16 visual review found that the initial renderer retained the inform
 
 ### Palette
 
-Use a shared semantic palette across all views, derived from [the interactive mockup](docs/mockups/index.html). Colors below are the true-color targets; reduced-color terminals may use their closest supported equivalents.
+Use a shared semantic palette across all views. **Green** retains the
+original [mockup palette](docs/mockups/index.html) and remains the default;
+**Blue** and **Amber** offer cool and warm alternatives. Choose a theme in
+settings (`,`, Theme, Enter). Enter applies and saves it, while Esc cancels.
+The choice survives restart and changes no session filters or scan state.
+A save failure keeps the prior theme and reports the problem. Each theme
+adapts to light/dark terminal backgrounds; no-color mode overrides color
+rendering while retaining the saved preference.
+
+The table below defines Green's true-color targets. The alternatives keep
+the same roles and hierarchy; shortcut/focus accents, selection fills,
+paths, rules, panel surfaces, and text all come from the chosen palette.
+Warnings and search highlights retain distinct semantic treatment.
+Reduced-color terminals may use their closest supported equivalents.
 
 | Role | Dark | Light | Use |
 | --- | --- | --- | --- |
@@ -245,15 +258,28 @@ Use a shared semantic palette across all views, derived from [the interactive mo
 
 Use contrasting foreground/background pairs for highlighted matches, not gold text alone. The implementation uses dark ink (`#24342d`) on a gold fill (`#ddc38c` in dark mode, `#f2dcaa` in light mode); the light status-label foreground remains `#795b20`. Keep the active match distinguishable by an additional focus cue. Any gold status label retains explicit wording such as **Agent reported**; the color does not establish success or verification.
 
+### Alternative palettes
+
+| Theme / variant | Panel | Accent | Selection fill | Path | Warning |
+| --- | --- | --- | --- | --- | --- |
+| Blue / dark | `#171e29` | `#91c7ff` | `#243c58` | `#a8dcd7` | `#ddc38c` |
+| Blue / light | `#f6f9fe` | `#215fa0` | `#dfebfa` | `#246663` | `#795b20` |
+| Amber / dark | `#242019` | `#edc17a` | `#473720` | `#b8d2c2` | `#f0a28b` |
+| Amber / light | `#fdf9f1` | `#845000` | `#f4e4c8` | `#3d6b53` | `#963b2d` |
+
+Amber uses peach/terracotta warning colors to distinguish warnings from
+its gold accent. Theme-specific body text, secondary text, raised surfaces,
+and rules complete each palette in `internal/tui/theme.go`.
+
 ### Structure and component treatment
 
 - **Screen frame:** fill the terminal background, reserving two blank columns on each side and one blank row above and below the application content. Use one side column at widths of 40–43 and omit the top/bottom row below 14 rows to retain the 40×12 minimum. Apply the same inner viewport to headers, footers, panes, transcripts, selectors, and sheets; header/footer rules span that inner width. The footer stays at the bottom of the inner frame even for an empty or short list. Wrapping, page movement, and resize calculations must all use the inner viewport so ordinary text never touches the terminal edge.
-- **Status bar:** use distinct semantic colors within the footer, following the supplied Codex status-bar reference: green bold shortcut keys and new-activity cues, muted action descriptions and separators, amber partial-coverage/source warnings, and blue informational/find text. Keep explicit wording for every state and retain clear key labels without color. Preserve the pinned full-width rule and readable narrow layouts.
+- **Status bar:** use distinct semantic colors within the footer, following the supplied Codex status-bar reference: theme-accent bold shortcut keys and new-activity cues (green by default), muted action descriptions and separators, amber partial-coverage/source warnings, and blue informational/find text. Keep explicit wording for every state and retain clear key labels without color. Preserve the pinned full-width rule and readable narrow layouts.
 - **Wide panes:** allocate approximately 45% to the list and the remainder to the overview, accounting for padding and the divider. Keep the divider continuous throughout the body. Short content must not move it sideways or shorten it.
 - **Cards and day groups:** use the three-line card treatment in section 3, a blank row between cards, and day rules. The selection fill reaches the card's right edge and the marker spans its full height. Keep child indentation and relationship labels readable.
 - **Overview:** use a prominent purpose, muted section labels, and a blue directory with a left rule. Separate continuation actions with a top rule and reserve their area below the scrolling detail. Resume receives the primary accent/fill treatment; labels and keyboard hints continue to identify all three actions.
 - **Selectors and sheets:** use a consistent bordered panel, internal padding, selected-option fill, and separated heading/help or action rows. Fit the panel to the terminal; compact layouts must retain scrolling and reachable actions. Visual formatting must not alter copied commands or context.
-- **Transcript and search:** use green role labels, muted timestamps, blue paths, and muted horizontal separators between messages or result groups. Highlight matches with a contrasting background, retaining the match count and navigation cues.
+- **Transcript and search:** use theme-accent role labels, muted timestamps, distinct path colors, and muted horizontal separators between messages or result groups. Highlight matches with a contrasting background, retaining the match count and navigation cues.
 - **Supporting screens:** copy previews, help, and sources/settings reuse the same text, path, focus, and separator roles rather than introducing another palette.
 - **Terminal adaptation:** use boldness, color, spacing, and alignment in place of the mockup's differing font sizes. Do not reproduce browser shadows, scene tabs, or presentation controls. Borders and padding consume terminal cells and must be included in width/height and scrolling calculations.
 
