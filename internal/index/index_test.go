@@ -145,3 +145,35 @@ func TestOverviewExcerptsSkipSetupAndPairLatestReply(t *testing.T) {
 		t.Errorf("LatestAssistant = %q, want empty: no reply follows the latest user message", ov.LatestAssistant)
 	}
 }
+
+func TestClearRemovesAllDerivedData(t *testing.T) {
+	ctx := context.Background()
+	ix := openTestIndex(t)
+	s := fixtureSession()
+	if err := ix.Upsert(ctx, s, 100, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.SetMeta(ctx, "walked_roots", `["/logs"]`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.Clear(ctx); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := ix.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Sessions != 0 || counts.Messages != 0 {
+		t.Errorf("counts after clear = %+v", counts)
+	}
+	if _, ok, err := ix.GetMeta(ctx, "walked_roots"); err != nil || ok {
+		t.Errorf("meta after clear: ok=%v err=%v, want cleared", ok, err)
+	}
+	hits, err := ix.SearchContent(ctx, "checkout", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 0 {
+		t.Errorf("search hits after clear = %d, want 0", len(hits))
+	}
+}

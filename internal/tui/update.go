@@ -13,9 +13,15 @@ import (
 // Update handles window, key, and background-scan messages.
 func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.lightTheme = !msg.IsDark()
+		return m, nil
 	case tea.WindowSizeMsg:
 		wasWide := m.isWide()
 		m.width, m.height = msg.Width, msg.Height
+		if m.overviewFind.query != "" {
+			m.overviewFind.reveal = true
+		}
 		if wasWide != m.isWide() {
 			// Crossing the layout boundary must not strand focus in
 			// an invisible overview: overview focus becomes the
@@ -26,9 +32,22 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.overviewOpen = !m.isWide()
 			}
 		}
+		m.View() // normalize scroll offsets for the resized viewport
 		return m, nil
 	case scanDoneMsg:
 		m.failedRoots = msg.failedRoots
+		if msg.id != 0 && msg.id == m.applyScanID {
+			m.applyScanID = 0
+			m.applyNextScan = false
+			if msg.err != nil {
+				m.notice = "Rescan failed; showing the cached index."
+				return m, nil
+			}
+			m.applySessions(msg.sessions)
+			m.pending, m.hasPending = nil, false
+			m.reloadSettings()
+			return m, nil
+		}
 		if msg.err != nil {
 			m.notice = "Background refresh failed; showing the cached index."
 			return m, nil
@@ -37,14 +56,19 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// First scan on an empty index: nothing to protect yet,
 			// so discovered cards appear immediately.
 			m.sessions = msg.sessions
+			m.pending, m.hasPending = nil, false
+			m.chooseAutomaticWindow()
 			m.partialCount = countPartial(m.sessions)
 			m.clampSelection()
 			m.refreshDetail()
 			return m, nil
 		}
+		m.removeAbsentSessions(msg.sessions)
 		if sessionsSignature(msg.sessions) != sessionsSignature(m.sessions) {
 			m.pending = msg.sessions
 			m.hasPending = true
+		} else {
+			m.pending, m.hasPending = nil, false
 		}
 		return m, nil
 	case tea.KeyPressMsg:
@@ -72,6 +96,8 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch m.overlay {
+	case overlayQuit:
+		return m.onQuitKey(s)
 	case overlaySheet:
 		return m.onSheetKey(s)
 	case overlayCopyMenu:
@@ -88,6 +114,9 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case overlayFilter:
 		return m.onFilterKey(msg)
 	}
+	if m.settings != nil {
+		return m.onSettingsKey(msg)
+	}
 	if m.transcript != nil {
 		return m.onTranscriptKey(msg)
 	}
@@ -95,6 +124,9 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onSearchKey(msg)
 	}
 	if m.focus == focusOverview || m.overviewOpen {
+		if m.overviewFind.editing {
+			return m.onOverviewFindInput(msg)
+		}
 		return m.onOverviewKey(s)
 	}
 	return m.onListKey(s)
@@ -104,7 +136,7 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 	m.notice = ""
 	switch s {
 	case "q":
-		return m, tea.Quit
+		m.overlay, m.quitSelected = overlayQuit, false
 	case "j", "down":
 		m.move(1)
 	case "k", "up":
@@ -139,6 +171,8 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 		}
 	case "?":
 		m.overlay = overlayHelp
+	case ",":
+		m.openSettings()
 	case "t":
 		if c, ok := m.selected(); ok {
 			m.openTranscript(c.row, 0, false)
@@ -159,6 +193,12 @@ func (m *appModel) onListKey(s string) (tea.Model, tea.Cmd) {
 
 func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 	switch s {
+	case "/":
+		m.normalizeOverviewScroll()
+		m.overviewFind.editing = true
+		m.overviewFind.draft = m.overviewFind.query
+	case "[", "]":
+		m.stepOverviewFind(s == "]")
 	case "T":
 		if c, ok := m.selected(); ok {
 			atSeq := 0
@@ -197,12 +237,17 @@ func (m *appModel) onOverviewKey(s string) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		m.overviewOpen = false
 		m.focus = focusList
-	case "j", "down":
-		m.overviewScroll++
-	case "k", "up":
-		if m.overviewScroll > 0 {
-			m.overviewScroll--
+	case "j", "down", "k", "up", "pgdown", "pgup":
+		m.normalizeOverviewScroll() // normalize before applying a relative move
+		step := 1
+		if s == "pgdown" || s == "pgup" {
+			step = max(1, m.overviewViewportHeight)
 		}
+		if s == "k" || s == "up" || s == "pgup" {
+			step = -step
+		}
+		m.overviewScroll += step
+		m.normalizeOverviewScroll()
 	case "?":
 		m.overlay = overlayHelp
 	}
@@ -272,25 +317,132 @@ func (m *appModel) move(delta int) {
 }
 
 func (m *appModel) applyPending() {
+	m.applySessions(m.pending)
+	m.pending = nil
+	m.hasPending = false
+}
+
+// applySessions replaces the visible list, preserving the selected
+// session by source path where it still exists.
+func (m *appModel) applySessions(sessions []index.SessionRow) {
 	keep := ""
+	oldSel := m.sel
 	if c, ok := m.selected(); ok {
 		keep = c.row.SourcePath
 	}
-	m.sessions = m.pending
+	m.sessions = sessions
+	m.chooseAutomaticWindow()
 	m.detailFor = "" // force the overview to reload after a refresh
 	m.partialCount = countPartial(m.sessions)
-	m.pending = nil
-	m.hasPending = false
-	m.sel = 0
+	found := false
 	for i, c := range m.cards() {
-		if c.row.SourcePath == keep {
+		if c.row.SourcePath == keep && keep != "" {
 			m.sel = i
+			found = true
 			break
 		}
 	}
+	if !found && keep != "" && len(m.cards()) > 0 {
+		// UX: land on the nearest remaining entry and say why.
+		m.sel = oldSel
+		m.clampSelection()
+		m.notice = "The selected session is no longer included; showing the nearest remaining session."
+		m.refreshDetail()
+		return
+	}
+	if !found && keep == "" {
+		m.sel = 0
+	}
 	m.clampSelection()
 	m.refreshDetail()
-	m.notice = "Showing the latest session ordering."
+	if found {
+		m.notice = "Showing the latest session ordering."
+	}
+}
+
+// removeAbsentSessions applies confirmed removals immediately while retaining
+// the old row values/order for survivors. New activity still waits for R.
+func (m *appModel) removeAbsentSessions(fresh []index.SessionRow) {
+	present := make(map[string]bool, len(fresh))
+	for _, row := range fresh {
+		present[row.SourcePath] = true
+	}
+	keep := ""
+	oldSel := m.sel
+	if c, ok := m.selected(); ok {
+		keep = c.row.SourcePath
+	}
+	var savedSource string
+	var savedScope *appModel
+	if m.search != nil {
+		snapshot := *m
+		savedScope = &snapshot
+		savedScope.windowDays = m.search.savedWindow
+		savedScope.project = m.search.savedProject
+		savedScope.harness = m.search.savedHarness
+		savedScope.sel = m.search.savedSel
+		if c, ok := savedScope.selected(); ok {
+			savedSource = c.row.SourcePath
+		}
+	}
+	survivors := make([]index.SessionRow, 0, len(m.sessions))
+	for _, row := range m.sessions {
+		if present[row.SourcePath] {
+			survivors = append(survivors, row)
+		}
+	}
+	if len(survivors) == len(m.sessions) {
+		return
+	}
+	m.sessions = survivors
+	m.partialCount = countPartial(survivors)
+	m.chooseAutomaticWindow()
+	found := false
+	for i, c := range m.cards() {
+		if c.row.SourcePath == keep {
+			m.sel = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		m.sel = oldSel
+	}
+	m.clampSelection()
+	if keep != "" && !present[keep] {
+		m.overviewScroll = 0
+		m.detailFor = ""
+		m.notice = "The selected session is no longer included; showing the nearest remaining session."
+		if len(m.cards()) == 0 {
+			m.notice = "The selected session is no longer included; no sessions remain in this scope."
+		}
+	}
+	m.refreshDetail()
+	if m.search != nil {
+		groups := m.search.groups[:0]
+		for _, group := range m.search.groups {
+			if present[group.row.SourcePath] {
+				groups = append(groups, group)
+			}
+		}
+		m.search.groups = groups
+		m.search.cursor = max(0, min(m.search.cursor, len(m.search.entries())-1))
+		savedScope.sessions = survivors
+		savedCards := savedScope.cards()
+		m.search.savedSel = max(0, min(m.search.savedSel, len(savedCards)-1))
+		for i, c := range savedCards {
+			if c.row.SourcePath == savedSource {
+				m.search.savedSel = i
+				break
+			}
+		}
+	}
+	if m.transcript != nil && !present[m.transcript.row.SourcePath] {
+		m.transcript = nil
+	}
+	if m.overlay == overlaySelector {
+		m.selCursor = max(0, min(m.selCursor, len(m.selectorOptions())-1))
+	}
 }
 
 // refreshDetail loads the selected session's overview synchronously;
@@ -298,9 +450,13 @@ func (m *appModel) applyPending() {
 func (m *appModel) refreshDetail() {
 	c, ok := m.selected()
 	if !ok {
+		m.overviewFind = overviewFindState{}
 		m.detail = nil
 		m.detailFor = ""
 		return
+	}
+	if m.overviewFind.source != c.row.SourcePath {
+		m.overviewFind = overviewFindState{source: c.row.SourcePath}
 	}
 	if m.detailFor == c.row.SourcePath && m.detail != nil {
 		return
@@ -350,6 +506,7 @@ func (m *appModel) selectorOptions() []selectorOption {
 		}{{"Today", 1}, {"3 days", 3}, {"7 days", 7}, {"30 days", 30}, {"All time", 0}} {
 			opt := opt
 			o := selectorOption{label: opt.label, apply: func(m *appModel) {
+				m.manualWindow = true
 				m.windowDays = opt.days
 				m.afterFilterChange()
 			}}
@@ -433,13 +590,14 @@ func (m *appModel) applySelector(opt selectorOption) {
 }
 
 func (m *appModel) afterFilterChange() {
+	m.chooseAutomaticWindow()
 	m.sel = 0
 	m.clampSelection()
 	m.overviewScroll = 0
 	m.refreshDetail()
 }
 
-func (m *appModel) isWide() bool { return m.width >= 110 }
+func (m *appModel) isWide() bool { w, _, _, _ := m.viewport(); return w >= 110 }
 
 // --- continuation sheet and copying ---
 
@@ -545,6 +703,23 @@ func (m *appModel) onCopyPreviewKey(s string) (tea.Model, tea.Cmd) {
 				m.copyState = "copied"
 			}
 		}
+	}
+	return m, nil
+}
+
+func (m *appModel) onQuitKey(s string) (tea.Model, tea.Cmd) {
+	switch s {
+	case "esc", "n":
+		m.overlay = overlayNone
+	case "left", "right", "up", "down", "tab", "shift+tab", "h", "l":
+		m.quitSelected = !m.quitSelected
+	case "y":
+		return m, tea.Quit
+	case "enter":
+		if m.quitSelected {
+			return m, tea.Quit
+		}
+		m.overlay = overlayNone
 	}
 	return m, nil
 }

@@ -273,11 +273,11 @@ func (m *appModel) selectSession(sourcePath string) bool {
 // viewSearch renders the cross-session search mode.
 func (m *appModel) viewSearch(w, h int) string {
 	st := m.search
-	header := styleHeading.Render("Search session content") + "\n" +
-		styleDim.Render(truncate(m.windowLabel()+" · "+m.projectLabel()+" · "+m.harnessLabel(), w)) + "\n" +
-		"Query: " + st.query + searchCursor(st)
-	footer := m.searchFooter(st)
-	bodyH := h - 4 - lipgloss.Height(footer)
+	header := m.styles().heading.Render("Search session content") + "\n" +
+		m.styles().muted.Render(truncate(m.windowLabel()+" · "+m.projectLabel()+" · "+m.harnessLabel(), w)) + "\n" +
+		"Query: " + truncate(st.query+searchCursor(st), max(1, w-7)) + "\n" + m.rule(w)
+	footer := m.rule(w) + "\n" + m.footerLines(strings.Split(m.searchFooter(st), "\n"), w)
+	bodyH := h - lipgloss.Height(header) - lipgloss.Height(footer)
 	if bodyH < 1 {
 		bodyH = 1
 	}
@@ -293,7 +293,7 @@ func (m *appModel) viewSearch(w, h int) string {
 		if g.count > 0 {
 			meta += fmt.Sprintf(" · %d matches", g.count)
 		}
-		lines = append(lines, styleHeading.Render(truncate(title, w)), styleDim.Render(truncate(meta, w)))
+		lines = append(lines, m.styles().heading.Render(truncate(title, w)), m.styles().muted.Render(truncate(meta, w)))
 		_ = gi
 		if g.field != "" {
 			if entryIdx == st.cursor {
@@ -314,16 +314,16 @@ func (m *appModel) viewSearch(w, h int) string {
 				kind = "tool call"
 			}
 			snippet := strings.ReplaceAll(sanitizeText(hit.Snippet), "\n", " ")
-			lines = append(lines, "  "+markerFor(entryIdx == st.cursor)+styleDim.Render(kind+"  ")+truncate(snippet, w-14))
+			lines = append(lines, "  "+markerFor(entryIdx == st.cursor)+m.styles().muted.Render(kind+"  ")+highlightWithStyle(truncate(snippet, max(1, w-lipgloss.Width(kind)-6)), st.query, m.styles().match))
 			entryIdx++
 		}
-		lines = append(lines, "")
+		lines = append(lines, "", m.rule(w))
 	}
 	if st.ran && len(st.groups) == 0 && !st.editing {
 		lines = append(lines, "No matches in the current scope.", "", "Broaden: a All time · P All projects · H All harnesses · / Edit query")
 	}
 	body := windowLines(lines, cursorLine, bodyH)
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, header, fitPane(body, w, bodyH), footer)
 }
 
 func searchCursor(st *searchState) string {
@@ -342,11 +342,11 @@ func markerFor(selected bool) string {
 
 func (m *appModel) searchFooter(st *searchState) string {
 	if st.editing {
-		return "Type to edit · Enter Search · Esc Back"
+		return m.styles().path.Render("Type to edit · ") + m.shortcutHints(" · ", "Enter", "Search", "Esc", "Back")
 	}
-	lines := []string{"↑↓/jk Select  Enter Open  / Edit query  a All time  P All projects  H All harnesses  Esc Back"}
+	lines := []string{m.shortcutHints("  ", "↑↓/jk", "Select", "Enter", "Open", "/", "Edit query", "a", "All time", "P", "All projects", "H", "All harnesses", "Esc", "Back")}
 	if st.status != "" {
-		lines = append([]string{st.status}, lines...)
+		lines = append([]string{m.styles().path.Render(st.status)}, lines...)
 	}
 	return strings.Join(lines, "\n")
 }

@@ -4,7 +4,7 @@ A local, keyboard-first TUI for remembering recent coding-agent work and decidin
 
 See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area.
 
-**Status:** Phase 4 implemented — transcript reading with in-session search and scoped cross-session content search are available from the recent-work overview. Sources, settings, and lifecycle controls follow in the final phase. The project name has not been cleared.
+**Status:** MVP implemented (Phases 1–5) — recent-work overview, continuation preparation and copying, transcript reading, content search, and sources/settings with the full derived-data lifecycle. Performance measurements are in [docs/benchmarks.md](docs/benchmarks.md) and scripted validation in [docs/validation.md](docs/validation.md). The project name has not been cleared.
 
 ## Core workflows
 
@@ -15,8 +15,8 @@ See what you worked on over the last few days, recognize each session's purpose 
 ## First release
 
 - Linux, with native Claude Code and Codex session logs.
-- Launch `trailmark` into the last seven days, grouped by day and ordered by last session activity.
-- Use the time selector to show Today, 3 days, 7 days, 30 days, or All time. The seven-day default does not limit retained history.
+- Launch `trailmark` into the last seven days, grouped by day and ordered by last session activity. If that scope is empty, automatically try 30 days, then All time, to show available history.
+- Use the time selector to show Today, 3 days, 7 days, 30 days, or All time. An explicit time choice stays fixed; otherwise choosing a project or harness automatically finds the smallest populated window from 7 days, 30 days, and All time. The seven-day default does not limit retained history.
 - Keep the launch interface to `trailmark`, `--help`, and `--version`; normal operations live inside the TUI.
 - Scan compact session cards that give purpose and project/path visual priority, with an adjacent overview where space permits.
 - Switch between all projects and the current project while keeping repository and worktree context visible.
@@ -33,6 +33,7 @@ Next enhancements include bookmarks, personal labels, previewable Markdown conte
 - [Market Requirements Document](MRD.md)
 - [Product Requirements Document](PRD.md)
 - [TUI experience and wireframes](UX.md)
+- [Visual specification](UX.md#8-visual-and-state-rules) — mockup colors, session selection, separators, spacing, and terminal adaptations; [visual acceptance criteria](PRD.md#visual-acceptance).
 - [Interactive TUI concept](docs/mockups/index.html) — open locally in a browser; fictional sessions, with no connection to real logs or agents.
 
 ## Technology direction

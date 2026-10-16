@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
@@ -46,7 +47,9 @@ func fixtureOverview(ctx context.Context, path string) (*index.Overview, error) 
 
 func testModel(t *testing.T) *appModel {
 	t.Helper()
+	origDirExists := continuation.DirExists
 	continuation.DirExists = func(string) bool { return true }
+	t.Cleanup(func() { continuation.DirExists = origDirExists })
 	m := newModel(context.Background(), dataDeps{overview: fixtureOverview, page: fixturePage, around: fixtureAround, inSession: fixtureInSession, content: fixtureContent, caps: testCaps(), copier: &fakeClipboard{}}, nil, "/home/dev/repos/trailmark", "/home/dev", fixtureSessions())
 	m.now = func() time.Time { return testNow }
 	m.width, m.height = 120, 40
@@ -305,7 +308,7 @@ func TestWideFrameFitsWidth(t *testing.T) {
 	}
 	m.width, m.height = 80, 24
 	view := m.View().Content
-	if !strings.Contains(view, "? Help") || !strings.Contains(view, "q Quit") {
+	if !strings.Contains(ansi.Strip(view), "? Help") || !strings.Contains(ansi.Strip(view), "q Quit") {
 		t.Error("80x24 footer must show Help and Quit actions")
 	}
 	for _, line := range strings.Split(view, "\n") {
@@ -760,5 +763,102 @@ func TestHighlightDoesNotCorruptANSI(t *testing.T) {
 	_ = plain
 	if strings.Count(out, "code") < 2 {
 		t.Errorf("both occurrences must survive highlighting: %q", out)
+	}
+}
+
+// --- Phase 5 settings fixtures ---
+
+type fakeSettings struct {
+	roots      []RootInfo
+	exclusions []string
+	cleared    bool
+	removed    []string
+}
+
+func (f *fakeSettings) Roots(context.Context) ([]RootInfo, error) { return f.roots, nil }
+func (f *fakeSettings) Status(context.Context) (SettingsStatus, error) {
+	return SettingsStatus{Indexed: 3, Partial: 1, LastScan: "2026-10-15T10:00:00Z", IndexPath: "/tmp/index.db"}, nil
+}
+func (f *fakeSettings) Exclusions() []string                 { return f.exclusions }
+func (f *fakeSettings) AddRoot(model.Provider, string) error { return nil }
+func (f *fakeSettings) RemoveRoot(_ context.Context, _ model.Provider, path string) error {
+	f.removed = append(f.removed, path)
+	return nil
+}
+func (f *fakeSettings) AddExclusion(p string) error {
+	f.exclusions = append(f.exclusions, p)
+	return nil
+}
+func (f *fakeSettings) RemoveExclusion(string) error { return nil }
+func (f *fakeSettings) ClearCache(context.Context) error {
+	f.cleared = true
+	return nil
+}
+
+func TestSettingsOpenMutateAndClose(t *testing.T) {
+	m := testModel(t)
+	fake := &fakeSettings{
+		roots:      []RootInfo{{Provider: model.ProviderCodex, Path: "/logs/codex", Configured: true, State: "ok", Sessions: 2}},
+		exclusions: []string{"/work/secret"},
+	}
+	m.deps.settings = fake
+	send(m, ",")
+	if m.settings == nil {
+		t.Fatal(", must open settings")
+	}
+	view := m.View().Content
+	for _, want := range []string{"Sources and settings", "Indexed: 3", "/logs/codex", "Exclusion: /work/secret"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("settings view missing %q", want)
+		}
+	}
+	// Clear cache requires confirmation.
+	for i, item := range m.settings.items {
+		if item.action == "clear-cache" {
+			m.settings.cursor = i
+		}
+	}
+	send(m, "enter")
+	if m.settings.mode != "confirm" || fake.cleared {
+		t.Fatal("clear cache must ask for confirmation first")
+	}
+	if !strings.Contains(m.View().Content, "never deleted") {
+		t.Error("confirmation must explain that source logs are never deleted")
+	}
+	send(m, "y")
+	if !fake.cleared {
+		t.Error("confirming must clear the cache")
+	}
+	send(m, "esc")
+	if m.settings != nil {
+		t.Error("Esc must close settings")
+	}
+	if c, ok := m.selected(); !ok || c.row.ID != "a1" {
+		t.Error("home selection must be preserved after settings")
+	}
+}
+
+func TestSettingsExclusionRequiresConfirmation(t *testing.T) {
+	m := testModel(t)
+	fake := &fakeSettings{}
+	m.deps.settings = fake
+	send(m, ",")
+	send(m, "x")
+	for _, r := range "/work/secret" {
+		send(m, string(r))
+	}
+	send(m, "enter")
+	if m.settings.mode != "confirm" {
+		t.Fatal("applying an exclusion must explain and confirm first")
+	}
+	if len(fake.exclusions) != 0 {
+		t.Error("exclusion must not apply before confirmation")
+	}
+	if !strings.Contains(m.View().Content, "derived text") {
+		t.Error("confirmation must explain derived-data removal")
+	}
+	send(m, "y")
+	if len(fake.exclusions) != 1 {
+		t.Error("confirmed exclusion must apply")
 	}
 }

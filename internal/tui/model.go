@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ const (
 	overlaySheet
 	overlayCopyMenu
 	overlayCopyPreview
+	overlayQuit
 )
 
 type selectorKind int
@@ -47,6 +49,7 @@ const (
 // scanDoneMsg carries the result of a background scan plus the
 // reloaded session list.
 type scanDoneMsg struct {
+	id          int // 0 for the startup scan; settings rescans carry a token
 	sessions    []index.SessionRow
 	failedRoots []string
 	err         error
@@ -64,6 +67,8 @@ type dataDeps struct {
 	content   func(ctx context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error)
 	caps      map[model.Provider]model.Capability
 	copier    clipboard.Copier
+	settings  settingsStore
+	rescan    func(ctx context.Context) ([]index.SessionRow, []string, error)
 }
 
 type appModel struct {
@@ -71,40 +76,52 @@ type appModel struct {
 	deps       dataDeps
 	transcript *transcriptState
 	search     *searchState
-	launchDir  string
-	home       string
-	now        func() time.Time
-	scanCmd    tea.Cmd // background refresh command, may be nil
+	settings   *settingsState
 
-	width, height int
-	sessions      []index.SessionRow
-	pending       []index.SessionRow
-	hasPending    bool
-	partialCount  int
+	applyNextScan bool
+	scanSeq       int
+	applyScanID   int
+	launchDir     string
+	home          string
+	now           func() time.Time
+	scanCmd       tea.Cmd // background refresh command, may be nil
 
-	windowDays     int // 0 means All time; default 7
-	harness        model.Provider
-	project        string // "" = all, "current" = current project, else a cwd
-	filterText     string
-	filterPrev     string
-	filterSelPrev  int
-	projectRoot    string
-	projectRootSet bool
-	sel            int // index into cards()
-	expanded       map[string]bool
-	detail         *index.Overview
-	detailFor      string
-	focus          focusPane
-	overviewOpen   bool // narrow full-width overview
-	overlay        overlayKind
-	selector       selectorKind
-	selCursor      int
-	overviewScroll int
-	notice         string
-	failedRoots    []string
+	theme                    *themeStyles
+	themeLight, themeNoColor bool
+	ascii                    bool
+	lightTheme               bool
+	noColor                  bool
+	width, height            int
+	sessions                 []index.SessionRow
+	pending                  []index.SessionRow
+	hasPending               bool
+	partialCount             int
 
-	caps        map[model.Provider]model.Capability
-	copier      clipboard.Copier
+	manualWindow           bool // explicit time selections stay fixed across scope changes
+	windowDays             int  // 0 means All time; default 7
+	harness                model.Provider
+	project                string // "" = all, "current" = current project, else a cwd
+	filterText             string
+	filterPrev             string
+	filterSelPrev          int
+	projectRoot            string
+	projectRootSet         bool
+	sel                    int // index into cards()
+	expanded               map[string]bool
+	detail                 *index.Overview
+	detailFor              string
+	focus                  focusPane
+	overviewOpen           bool // narrow full-width overview
+	quitSelected           bool // Cancel is the default choice
+	overlay                overlayKind
+	selector               selectorKind
+	selCursor              int
+	overviewFind           overviewFindState
+	overviewViewportHeight int // current scrollable area, excluding pinned actions
+	overviewScroll         int
+	notice                 string
+	failedRoots            []string
+
 	sheet       *continuation.Prepared
 	sheetState  string // "", "copied", "failed"
 	copyItems   []copyItem
@@ -119,6 +136,8 @@ type appModel struct {
 func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, home string, sessions []index.SessionRow) *appModel {
 	m := &appModel{
 		ctx:        ctx,
+		noColor:    colorDisabled(),
+		ascii:      os.Getenv("TERM") == "dumb",
 		deps:       deps,
 		launchDir:  launchDir,
 		home:       home,
@@ -129,6 +148,7 @@ func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, ho
 		expanded:   map[string]bool{},
 	}
 	m.partialCount = countPartial(sessions)
+	m.chooseAutomaticWindow()
 	m.refreshDetail()
 	return m
 }
@@ -143,7 +163,7 @@ func countPartial(sessions []index.SessionRow) int {
 	return n
 }
 
-func (m *appModel) Init() tea.Cmd { return m.scanCmd }
+func (m *appModel) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.scanCmd) }
 
 // providerLabel renders the supporting provider name.
 func providerLabel(p model.Provider) string {

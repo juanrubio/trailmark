@@ -187,11 +187,21 @@ func (m *appModel) onTranscriptKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			t.cursor--
 		} else {
 			m.transcriptLoadPrev(t)
+			if t.cursor > 0 {
+				t.cursor--
+			}
 		}
-	case "J":
-		t.lineScroll += 10
-	case "K":
-		t.lineScroll -= 10
+	case "J", "K", "pgdown", "pgup":
+		w, h, _, _ := m.viewport()
+		m.viewTranscript(w, h) // normalize before applying a relative move
+		step := 10
+		if s == "pgdown" || s == "pgup" {
+			step = m.transcriptBodyHeight(t, w, h)
+		}
+		if s == "K" || s == "pgup" {
+			step = -step
+		}
+		m.scrollTranscript(step, s == "pgdown" || s == "pgup")
 	case "/":
 		t.searchPrev = t.query
 		t.searching = true
@@ -220,6 +230,50 @@ func (m *appModel) onTranscriptKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// scrollTranscript keeps the visible line anchored while paging loads or
+// evicts messages. Selecting messages with j/k remains a separate operation.
+func (m *appModel) scrollTranscript(delta int, loadPages bool) {
+	t := m.transcript
+	w, h, _, _ := m.viewport()
+	height := m.transcriptBodyHeight(t, w, h)
+	lines, cursor := m.transcriptLines(t, w)
+	base := scrollStart(len(lines), cursor-height/2, height)
+	top := base + t.lineScroll
+	if loadPages && len(t.msgs) > 0 {
+		old := append([]index.TranscriptMessage(nil), t.msgs...)
+		if delta > 0 && top+delta > max(0, len(lines)-height) {
+			m.transcriptLoadMore(t)
+			// Count the exact wrapped lines evicted from the front.
+			removed := 0
+			for removed < len(old) && old[removed].Seq < t.msgs[0].Seq {
+				removed++
+			}
+			if removed > 0 {
+				prefix := *t
+				prefix.msgs = old[:removed]
+				dropped, _ := m.transcriptLines(&prefix, w)
+				top -= len(dropped)
+			}
+		} else if delta < 0 && top+delta < 0 {
+			first := old[0].Seq
+			m.transcriptLoadPrev(t)
+			added := 0
+			for added < len(t.msgs) && t.msgs[added].Seq < first {
+				added++
+			}
+			if added > 0 {
+				prefix := *t
+				prefix.msgs = t.msgs[:added]
+				inserted, _ := m.transcriptLines(&prefix, w)
+				top += len(inserted)
+			}
+		}
+	}
+	lines, cursor = m.transcriptLines(t, w)
+	base = scrollStart(len(lines), cursor-height/2, height)
+	t.lineScroll = scrollStart(len(lines), top+delta, height) - base
 }
 
 func (m *appModel) runTranscriptSearch(t *transcriptState) {
@@ -268,6 +322,7 @@ func (m *appModel) transcriptMatchStep(t *transcriptState, delta int) {
 }
 
 func (m *appModel) transcriptRevealMatch(t *transcriptState) {
+	t.lineScroll = 0
 	seq := t.matches[t.matchPos]
 	m.transcriptGotoSeq(t, seq)
 	if msg, ok := t.current(); ok && msg.Kind != "message" {
@@ -298,28 +353,33 @@ func excerptOf(msg index.TranscriptMessage) index.Excerpt {
 // viewTranscript renders the transcript page.
 func (m *appModel) viewTranscript(w, h int) string {
 	t := m.transcript
-	header := styleHeading.Render(truncate(purposeOrUnavailable(t.row), w)) + "\n" +
-		styleDim.Render(truncate(projectName(t.row.CWD)+"  "+t.row.CWD+" · "+providerLabel(t.row.Provider), w))
-	footer := m.transcriptFooter(t)
-	bodyH := h - 3 - lipgloss.Height(footer)
-	if bodyH < 1 {
-		bodyH = 1
-	}
+	header := m.styles().heading.Render(truncate(purposeOrUnavailable(t.row), w)) + "\n" +
+		m.styles().path.Render(truncate(projectName(t.row.CWD)+"  "+t.row.CWD+" · "+providerLabel(t.row.Provider), w)) + "\n" + m.rule(w)
+	footer := m.rule(w) + "\n" + m.footerLines(strings.Split(m.transcriptFooter(t), "\n"), w)
+	bodyH := m.transcriptBodyHeight(t, w, h)
 	lines, cursorLine := m.transcriptLines(t, w)
+	base := scrollStart(len(lines), cursorLine-bodyH/2, bodyH)
+	start := scrollStart(len(lines), base+t.lineScroll, bodyH)
+	t.lineScroll = start - base
 	body := windowLinesScrolled(lines, cursorLine, t.lineScroll, bodyH)
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, header, fitPane(body, w, bodyH), footer)
+}
+
+func (m *appModel) transcriptBodyHeight(t *transcriptState, w, h int) int {
+	footer := m.rule(w) + "\n" + m.footerLines(strings.Split(m.transcriptFooter(t), "\n"), w)
+	return max(1, h-3-lipgloss.Height(footer))
 }
 
 func (m *appModel) transcriptFooter(t *transcriptState) string {
 	if t.searching {
-		return "Search this session: " + t.query + "_  (Enter search · Esc cancel)"
+		return m.styles().path.Render("Search this session: "+t.query+"_  (") + m.shortcutHints(" · ", "Enter", "search", "Esc", "cancel") + m.styles().path.Render(")")
 	}
-	parts := []string{"↑↓/jk Select  / Search  [ ] Matches  e Expand tools  Enter Toggle  c Copy  Esc Back"}
+	parts := []string{m.shortcutHints("  ", "↑↓/jk", "Select", "J/K", "Scroll", "PgUp/PgDown", "Page"), m.shortcutHints("  ", "/", "Search", "[ ]", "Matches", "e", "Expand tools", "Enter", "Toggle", "c", "Copy", "Esc", "Back")}
 	if t.status != "" {
-		parts = append([]string{t.status}, parts...)
+		parts = append([]string{m.styles().path.Render(t.status)}, parts...)
 	}
 	if len(t.matches) > 0 {
-		parts = append([]string{fmt.Sprintf("%d matches", len(t.matches))}, parts...)
+		parts = append([]string{m.styles().path.Render(fmt.Sprintf("%d matches", len(t.matches)))}, parts...)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -337,7 +397,7 @@ func (m *appModel) transcriptLines(t *transcriptState, w int) ([]string, int) {
 		}
 		marker := "  "
 		if i == t.cursor {
-			marker = styleAccent.Render("▌ ")
+			marker = m.styles().accent.Render(m.selectionMarker())
 		}
 		ts := ""
 		if msg.Timestamp != nil {
@@ -347,17 +407,17 @@ func (m *appModel) transcriptLines(t *transcriptState, w int) ([]string, int) {
 		expanded := t.expandAll || t.expanded[msg.Seq]
 		if isTool && !expanded {
 			first := firstLine(sanitizeText(msg.Text))
-			lines = append(lines, marker+styleDim.Render("▸ "+roleLabel(msg)+ts+"  "+truncate(first, w-12)))
+			lines = append(lines, marker+m.styles().muted.Render("▸ "+roleLabel(msg)+ts+"  "+truncate(first, w-12)))
 			continue
 		}
-		lines = append(lines, marker+styleHeading.Render(roleLabel(msg)+ts))
-		for _, l := range wrapPreserve(sanitizeText(msg.Text), w-2) {
+		lines = append(lines, marker+m.styles().accent.Render(roleLabel(msg))+m.styles().muted.Render(ts))
+		for _, l := range wrapTranscript(sanitizeText(msg.Text), w-2) {
 			if matchSet[msg.Seq] && t.query != "" {
-				l = highlightMatches(l, t.query)
+				l = highlightWithStyle(l, t.query, m.styles().match)
 			}
 			lines = append(lines, "  "+l)
 		}
-		lines = append(lines, "")
+		lines = append(lines, "", m.rule(w))
 	}
 	if len(t.msgs) == 0 {
 		lines = append(lines, "Transcript unavailable.")
@@ -375,9 +435,12 @@ func firstLine(s string) string {
 // highlightMatches accents every literal occurrence of the query
 // terms. Matching is done on rune slices so ANSI styling inserted
 // for one term can never be matched or split by a later term.
-var styleMatch = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
 
 func highlightMatches(line, query string) string {
+	return highlightWithStyle(line, query, newStyles(false, false).match)
+}
+
+func highlightWithStyle(line, query string, styleMatch lipgloss.Style) string {
 	terms := queryTerms(query)
 	if len(terms) == 0 {
 		return line
@@ -474,14 +537,15 @@ func windowLinesScrolled(lines []string, keepVisible, extraScroll, h int) string
 	if h <= 0 || len(lines) <= h {
 		return strings.Join(lines, "\n")
 	}
-	start := keepVisible - h/2 + extraScroll
-	if start < 0 {
-		start = 0
-	}
-	if start+h > len(lines) {
-		start = len(lines) - h
-	}
+	base := scrollStart(len(lines), keepVisible-h/2, h)
+	start := scrollStart(len(lines), base+extraScroll, h)
 	return strings.Join(lines[start:start+h], "\n")
+}
+
+// scrollStart clamps the viewport itself, so boundaries never accumulate
+// invisible scroll distance that must be undone before movement is visible.
+func scrollStart(total, start, height int) int {
+	return max(0, min(start, max(0, total-height)))
 }
 
 // queryTerms extracts literal search terms and quoted phrases.

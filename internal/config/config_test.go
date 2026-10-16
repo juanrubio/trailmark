@@ -69,3 +69,65 @@ func TestLoadParsesFile(t *testing.T) {
 		t.Error("exclusion from file not applied")
 	}
 }
+
+func TestSaveRoundTripKeepsDefaultsOut(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRAILMARK_CONFIG_DIR", dir)
+	cfg := &config.Config{
+		Roots:      []config.Root{{Provider: model.ProviderCodex, Path: "/tmp/extra"}},
+		Exclusions: []string{"/tmp/secret"},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Roots) != 1 || loaded.Roots[0].Path != "/tmp/extra" {
+		t.Errorf("configured roots after round trip = %+v", loaded.Roots)
+	}
+	if !loaded.Excluded("/tmp/secret/x.jsonl") {
+		t.Error("exclusion lost in round trip")
+	}
+	found := false
+	for _, r := range loaded.EffectiveRoots() {
+		if r.Path == "/tmp/extra" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("effective roots must include the configured root")
+	}
+}
+
+func TestDisableDefaultRoots(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRAILMARK_CONFIG_DIR", dir)
+	body := `{"disable_default_roots":true,"roots":[{"provider":"codex","path":"/tmp/only"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := cfg.EffectiveRoots()
+	if len(roots) != 1 || roots[0].Path != "/tmp/only" {
+		t.Errorf("effective roots = %+v, want only the configured root", roots)
+	}
+}
+
+func TestEffectiveRootsHonorDisableFlagInSession(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRAILMARK_CONFIG_DIR", dir)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(cfg.EffectiveRoots())
+	cfg.DisableDefaultRoots = true
+	if got := len(cfg.EffectiveRoots()); got != 0 {
+		t.Errorf("effective roots after disabling defaults = %d (was %d), want 0 without reload", got, before)
+	}
+}

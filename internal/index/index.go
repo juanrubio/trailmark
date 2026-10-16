@@ -21,7 +21,7 @@ import (
 
 // ParserVersion identifies the extraction logic that produced the
 // indexed rows. Bumping it forces a reindex of unchanged files.
-const ParserVersion = 1
+const ParserVersion = 2
 
 // Index is the derived-data store.
 type Index struct {
@@ -477,4 +477,29 @@ func unixOrNil(t *time.Time) any {
 		return nil
 	}
 	return t.Unix()
+}
+
+// Clear removes all derived index data (sessions, messages, search
+// text, and scan metadata) in one transaction. Configuration and
+// exclusions live outside the index and are untouched.
+func (ix *Index) Clear(ctx context.Context) error {
+	tx, err := ix.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin clear: %w", err)
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM messages_fts`,
+		`DELETE FROM messages`,
+		`DELETE FROM sessions`,
+		`DELETE FROM meta`,
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("clear index: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit clear: %w", err)
+	}
+	return nil
 }

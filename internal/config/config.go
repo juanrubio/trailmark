@@ -18,11 +18,15 @@ type Root struct {
 	Path     string         `json:"path"`
 }
 
-// Config is the on-disk configuration shape.
+// Config is the on-disk configuration shape. Roots holds only
+// user-configured roots; detected defaults live in extraRoots and
+// are never persisted back as if the user had configured them.
 type Config struct {
 	Roots               []Root   `json:"roots,omitempty"`
 	Exclusions          []string `json:"exclusions,omitempty"`
 	DisableDefaultRoots bool     `json:"disable_default_roots,omitempty"`
+
+	extraRoots []Root
 }
 
 // Dir returns Trailmark's configuration directory.
@@ -91,7 +95,7 @@ func Load() (*Config, error) {
 	path := filepath.Join(dir, "config.json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Config{Roots: DefaultRoots()}, nil
+		return &Config{extraRoots: DefaultRoots()}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
@@ -109,20 +113,142 @@ func Load() (*Config, error) {
 		}
 	}
 	if !cfg.DisableDefaultRoots {
-		cfg.Roots = append(cfg.Roots, DefaultRoots()...)
+		cfg.extraRoots = DefaultRoots()
 	}
 	return &cfg, nil
 }
 
-// EffectiveRoots returns the configured roots deduplicated by
-// provider plus canonical path (one directory may serve two
-// providers, but the same provider and path scans once). Load
-// populates detected defaults; a Config built directly uses exactly
-// the roots it names.
+// Save persists the user-owned configuration (configured roots,
+// exclusions, and the default-roots flag) with user-only
+// permissions. Detected defaults are never written back.
+func (c *Config) Save() error {
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create config dir %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, "config.json")
+	// Preserve unknown fields from an existing file, overlay the
+	// known keys, and write atomically via a temp file plus rename
+	// so a crash cannot corrupt the config.
+	merged := map[string]json.RawMessage{}
+	if existing, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(existing, &merged)
+	}
+	set := func(key string, v any) error {
+		if v == nil {
+			delete(merged, key)
+			return nil
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		merged[key] = data
+		return nil
+	}
+	if len(c.Roots) > 0 {
+		if err := set("roots", c.Roots); err != nil {
+			return fmt.Errorf("encode config: %w", err)
+		}
+	} else {
+		delete(merged, "roots")
+	}
+	if len(c.Exclusions) > 0 {
+		if err := set("exclusions", c.Exclusions); err != nil {
+			return fmt.Errorf("encode config: %w", err)
+		}
+	} else {
+		delete(merged, "exclusions")
+	}
+	if c.DisableDefaultRoots {
+		if err := set("disable_default_roots", true); err != nil {
+			return fmt.Errorf("encode config: %w", err)
+		}
+	} else {
+		delete(merged, "disable_default_roots")
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write config %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replace config %s: %w", path, err)
+	}
+	return nil
+}
+
+// AddRoot records a configured root and reports whether it changed.
+func (c *Config) AddRoot(r Root) bool {
+	for _, existing := range c.Roots {
+		if existing.Provider == r.Provider && Canonical(existing.Path) == Canonical(r.Path) {
+			return false
+		}
+	}
+	c.Roots = append(c.Roots, r)
+	return true
+}
+
+// RemoveConfiguredRoot drops a user-configured root.
+func (c *Config) RemoveConfiguredRoot(provider model.Provider, path string) bool {
+	for i, r := range c.Roots {
+		if r.Provider == provider && Canonical(r.Path) == Canonical(path) {
+			c.Roots = append(c.Roots[:i], c.Roots[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// IsConfiguredRoot reports whether the root came from the config file.
+func (c *Config) IsConfiguredRoot(provider model.Provider, path string) bool {
+	for _, r := range c.Roots {
+		if r.Provider == provider && Canonical(r.Path) == Canonical(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// AddExclusion records an exclusion path.
+func (c *Config) AddExclusion(path string) bool {
+	for _, ex := range c.Exclusions {
+		if Canonical(ex) == Canonical(path) {
+			return false
+		}
+	}
+	c.Exclusions = append(c.Exclusions, path)
+	return true
+}
+
+// RemoveExclusion drops one exclusion path.
+func (c *Config) RemoveExclusion(path string) bool {
+	for i, ex := range c.Exclusions {
+		if Canonical(ex) == Canonical(path) {
+			c.Exclusions = append(c.Exclusions[:i], c.Exclusions[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// EffectiveRoots returns configured roots plus detected defaults
+// (unless disabled), deduplicated by provider plus canonical path.
+// A Config built directly uses exactly the roots it names.
 func (c *Config) EffectiveRoots() []Root {
 	seen := map[string]bool{}
 	var out []Root
-	for _, r := range c.Roots {
+	all := append([]Root{}, c.Roots...)
+	if !c.DisableDefaultRoots {
+		all = append(all, c.extraRoots...)
+	}
+	for _, r := range all {
 		key, err := canonical(r.Path)
 		if err != nil {
 			key = filepath.Clean(r.Path)

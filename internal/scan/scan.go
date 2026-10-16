@@ -8,11 +8,14 @@ package scan
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/juanrubio/trailmark/internal/adapter"
 	"github.com/juanrubio/trailmark/internal/adapter/claudecode"
@@ -28,7 +31,7 @@ const walkedRootsKey = "walked_roots"
 type Stats struct {
 	Discovered  int
 	Indexed     int
-	Skipped     int // unchanged since the last successful index
+	Skipped     int // unchanged indexed files or confirmed non-session data
 	Partial     int
 	Failed      int
 	Excluded    int
@@ -38,6 +41,7 @@ type Stats struct {
 
 // Scanner runs discovery plus indexing over configured roots.
 type Scanner struct {
+	mu       sync.Mutex // serializes scans: interleaved prune passes are unsafe
 	Index    *index.Index
 	Adapters map[model.Provider]adapter.Adapter
 	Config   *config.Config
@@ -51,6 +55,8 @@ type Scanner struct {
 // roots and all derived data under roots removed from the config
 // since the previous scan.
 func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
 	var stats Stats
 	seen := map[string]bool{}
 	currentRoots := map[string]bool{}
@@ -72,8 +78,10 @@ func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
 				return stats, ctx.Err()
 			}
 			stats.FailedRoots = append(stats.FailedRoots, root.Path)
+			sc.recordRootStatus(ctx, canonRoot, "unavailable")
 			continue
 		}
+		sc.recordRootStatus(ctx, canonRoot, "ok")
 		walkedRoots = append(walkedRoots, canonRoot)
 	}
 
@@ -110,6 +118,9 @@ func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
 			keep[prev] = true
 		}
 	}
+	if data, err := json.Marshal(stats); err == nil {
+		_ = sc.Index.SetMeta(ctx, "last_scan_stats", string(data))
+	}
 	stored := make([]string, 0, len(keep))
 	for r := range keep {
 		stored = append(stored, r)
@@ -119,6 +130,70 @@ func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
 		return stats, err
 	}
 	return stats, nil
+}
+
+const rootStatusKey = "root_status"
+
+// LastScanStats returns the persisted stats of the most recent scan.
+func (sc *Scanner) LastScanStats(ctx context.Context) (Stats, bool, error) {
+	raw, ok, err := sc.Index.GetMeta(ctx, "last_scan_stats")
+	if err != nil || !ok || raw == "" {
+		return Stats{}, false, err
+	}
+	var stats Stats
+	if err := json.Unmarshal([]byte(raw), &stats); err != nil {
+		return Stats{}, false, fmt.Errorf("decode scan stats: %w", err)
+	}
+	return stats, true, nil
+}
+
+// LastScanAt returns the last scan attempt time, if recorded.
+func (sc *Scanner) LastScanAt(ctx context.Context) (string, bool, error) {
+	return sc.Index.GetMeta(ctx, "last_scan_at")
+}
+
+// RootStatus is one root's last scan outcome.
+type RootStatus struct {
+	State    string `json:"state"` // ok or unavailable
+	LastOKAt string `json:"last_ok_at,omitempty"`
+	LastTry  string `json:"last_try,omitempty"`
+}
+
+// RootStatuses reads the persisted per-root scan status.
+func (sc *Scanner) RootStatuses(ctx context.Context) (map[string]RootStatus, error) {
+	raw, ok, err := sc.Index.GetMeta(ctx, rootStatusKey)
+	if err != nil || !ok || raw == "" {
+		return map[string]RootStatus{}, err
+	}
+	out := map[string]RootStatus{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("decode root status: %w", err)
+	}
+	return out, nil
+}
+
+func (sc *Scanner) recordRootStatus(ctx context.Context, root, state string) {
+	statuses, err := sc.RootStatuses(ctx)
+	if err != nil {
+		statuses = map[string]RootStatus{}
+	}
+	cur := statuses[root]
+	now := time.Now().Format(time.RFC3339)
+	cur.State = state
+	cur.LastTry = now
+	if state == "ok" {
+		cur.LastOKAt = now
+	}
+	statuses[root] = cur
+	data, err := json.Marshal(statuses)
+	if err != nil {
+		return
+	}
+	_ = sc.Index.SetMeta(ctx, rootStatusKey, string(data))
+	_ = sc.Index.SetMeta(ctx, "last_scan_at", now)
+	if state == "ok" {
+		_ = sc.Index.SetMeta(ctx, "last_scan_ok", now)
+	}
 }
 
 func (sc *Scanner) storedRoots(ctx context.Context) ([]string, error) {
@@ -179,7 +254,15 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 		path := filepath.Join(canonDir, entry.Name())
 		info, err := entry.Info()
 		if err != nil {
-			stats.Failed++
+			// Still route the file through indexFile so it counts
+			// as seen: an unstat-able file must not look deleted.
+			if filepath.Ext(entry.Name()) == ".jsonl" {
+				if err := sc.indexFile(ctx, path, ad, seen, stats); err != nil {
+					return err
+				}
+			} else {
+				stats.Failed++
+			}
 			continue
 		}
 		mode := info.Mode()
@@ -229,9 +312,10 @@ func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapte
 		stats.Failed++
 		return nil
 	}
-	if size, mtimeNanos, cwd, version, ok, err := sc.Index.FileState(ctx, canon); err != nil {
+	size, mtimeNanos, cwd, version, wasIndexed, err := sc.Index.FileState(ctx, canon)
+	if err != nil {
 		return err
-	} else if ok && size == info.Size() && mtimeNanos == info.ModTime().UnixNano() && version == index.ParserVersion {
+	} else if wasIndexed && size == info.Size() && mtimeNanos == info.ModTime().UnixNano() && version == index.ParserVersion {
 		if cwd != "" && sc.Config.Excluded(cwd) {
 			stats.Excluded++
 			return sc.Index.Remove(ctx, canon)
@@ -241,6 +325,17 @@ func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapte
 		return nil
 	}
 	session, err := ad.ParseFile(ctx, canon)
+	if errors.Is(err, adapter.ErrNotSession) {
+		if err := sc.Index.Remove(ctx, canon); err != nil {
+			return err
+		}
+		if wasIndexed {
+			stats.Pruned++
+		}
+		stats.Skipped++
+		sc.report(stats)
+		return nil
+	}
 	if err != nil {
 		stats.Failed++
 		sc.report(stats)

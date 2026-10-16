@@ -229,40 +229,6 @@ func (ix *Index) SearchContentScoped(ctx context.Context, query string, paths []
 			return nil, err
 		}
 	}
-	// Groups whose hits fell outside the global relevance window
-	// still get their own top hits, so no matching session vanishes.
-	fallback := 0
-	for _, g := range order {
-		if g.hasBest || fallback >= 200 {
-			continue
-		}
-		fallback++
-		if len(g.group.Hits) > 0 {
-			continue
-		}
-		path := g.path
-		rows, err := ix.db.QueryContext(ctx, `SELECT seq, kind, bm25(messages_fts) FROM messages_fts
-			WHERE messages_fts MATCH ? AND source_path = ? ORDER BY bm25(messages_fts) LIMIT 3`, match, path)
-		if err != nil {
-			return nil, fmt.Errorf("scoped content search group hits: %w", err)
-		}
-		for rows.Next() {
-			var h SearchHit
-			h.SourcePath = path
-			if err := rows.Scan(&h.Seq, &h.Kind, &h.Rank); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan group hit: %w", err)
-			}
-			g.group.Hits = append(g.group.Hits, h)
-			if !g.hasBest || h.Rank < g.best {
-				g.best, g.hasBest = h.Rank, true
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-	}
 	// Attach session rows only for discovered groups.
 	if len(order) > 0 {
 		discovered := make([]string, 0, len(order))
@@ -301,17 +267,38 @@ func (ix *Index) SearchContentScoped(ctx context.Context, query string, paths []
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
-	// Snippets are fetched last, only for retained groups: FTS5
-	// snippet() cannot run inside the window-function subquery.
+	// Retained groups get their exact top hits with snippets in
+	// one query per group. Groups outside the global relevance
+	// window keep their exact counts and rank after window groups.
 	for gi := range out {
-		for hi := range out[gi].Hits {
-			h := &out[gi].Hits[hi]
-			var snippet *string
-			row := ix.db.QueryRowContext(ctx, `SELECT snippet(messages_fts, 0, '[', ']', '…', 12) FROM messages_fts
-				WHERE messages_fts MATCH ? AND source_path = ? AND seq = ?`, match, h.SourcePath, h.Seq)
-			if err := row.Scan(&snippet); err == nil && snippet != nil {
-				h.Snippet = *snippet
+		path := out[gi].Row.SourcePath
+		if path == "" && len(out[gi].Hits) > 0 {
+			path = out[gi].Hits[0].SourcePath
+		}
+		if path == "" {
+			continue
+		}
+		rows, err := ix.db.QueryContext(ctx, `SELECT seq, kind, snippet(messages_fts, 0, '[', ']', '…', 12), bm25(messages_fts)
+			FROM messages_fts WHERE messages_fts MATCH ? AND source_path = ? ORDER BY bm25(messages_fts) LIMIT 3`, match, path)
+		if err != nil {
+			return nil, fmt.Errorf("fetch group hits: %w", err)
+		}
+		var hits []SearchHit
+		for rows.Next() {
+			var h SearchHit
+			h.SourcePath = path
+			if err := rows.Scan(&h.Seq, &h.Kind, &h.Snippet, &h.Rank); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan group hit: %w", err)
 			}
+			hits = append(hits, h)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		if hits != nil {
+			out[gi].Hits = hits
 		}
 	}
 	return out, nil

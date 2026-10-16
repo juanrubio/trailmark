@@ -72,7 +72,7 @@ func runTUI(ctx context.Context) error {
 		Adapters: scan.DefaultAdapters(home),
 		Config:   cfg,
 	}
-	return tui.Run(ctx, tui.Deps{Index: ix, Scanner: scanner})
+	return tui.Run(ctx, tui.Deps{Index: ix, Scanner: scanner, Config: cfg})
 }
 
 // Execute runs the root command.

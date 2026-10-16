@@ -2,6 +2,7 @@ package scan_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -315,5 +316,63 @@ func TestScanPrunesConfirmedDeletion(t *testing.T) {
 	}
 	if stats.Pruned != 1 {
 		t.Errorf("stats = %+v, want 1 pruned", stats)
+	}
+}
+
+func TestScanOmitsTelemetryAndPrunesOldParserRows(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	telemetry := filepath.Join(root, "skill-injections.jsonl")
+	body := []byte(`{"event":"skill-injection","timestamp":"2026-10-15T12:00:00Z","injectedSkills":[],"matchedSkills":[],"summaryOnly":false}`)
+	if err := os.WriteFile(telemetry, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	native := filepath.Join(root, "arbitrary-native-name.jsonl")
+	if err := os.WriteFile(native, []byte(claudeLog), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dbpath := filepath.Join(t.TempDir(), "index.db")
+	ix, err := index.Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Close()
+	cfg := &config.Config{DisableDefaultRoots: true, Roots: []config.Root{{Provider: model.ProviderClaudeCode, Path: root}}}
+	scanner := newScanner(ix, cfg)
+	stats, err := scanner.Scan(ctx)
+	if err != nil || stats.Indexed != 1 || stats.Failed != 0 {
+		t.Fatalf("telemetry scan=%+v err=%v", stats, err)
+	}
+	rows, err := ix.ListSessions(ctx, 100)
+	if err != nil || len(rows) != 1 || rows[0].SourcePath != native {
+		t.Fatalf("telemetry indexed: %v %v", rows, err)
+	}
+	// Model the prior parser's false positive with an unchanged source fingerprint.
+	info, err := os.Stat(telemetry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.Upsert(ctx, &model.Session{Provider: model.ProviderClaudeCode, SourcePath: telemetry, ID: "stale-telemetry"}, info.Size(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE sessions SET parser_version = ? WHERE source_path = ?`, index.ParserVersion-1, telemetry); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	stats, err = scanner.Scan(ctx)
+	if err != nil || stats.Pruned != 1 || stats.Failed != 0 {
+		t.Fatalf("reclassification scan=%+v err=%v", stats, err)
+	}
+	rows, err = ix.ListSessions(ctx, 100)
+	if err != nil || len(rows) != 1 || rows[0].SourcePath != native {
+		t.Fatalf("stale telemetry not pruned: %v %v", rows, err)
+	}
+	after, err := os.ReadFile(telemetry)
+	if err != nil || string(after) != string(body) {
+		t.Fatal("source telemetry was modified")
 	}
 }

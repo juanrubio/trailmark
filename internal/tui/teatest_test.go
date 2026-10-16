@@ -20,6 +20,7 @@ func TestTeatestWidePaintsAndQuits(t *testing.T) {
 
 	tm.Send(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	tm.Send(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 }
 
@@ -39,6 +40,7 @@ func TestTeatestNarrowOverviewFlow(t *testing.T) {
 
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEsc})
 	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	tm.Send(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 
 	final := tm.FinalModel(t).(*appModel)

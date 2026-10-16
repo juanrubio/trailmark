@@ -2,6 +2,10 @@ package claudecode_test
 
 import (
 	"context"
+	"errors"
+	"github.com/juanrubio/trailmark/internal/adapter"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,5 +92,37 @@ func TestCapability(t *testing.T) {
 	c := claudecode.Adapter{}.Capability()
 	if !c.ForkSupported || c.ResumeTemplate == "" || c.ForkTemplate == "" || c.CleanTemplate == "" {
 		t.Errorf("capability incomplete: %+v", c)
+	}
+}
+
+func TestNonSessionTelemetryAndIncompleteNativeEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name, body          string
+		notSession, partial bool
+	}{
+		{name: "telemetry", body: `{"event":"skill-injection","timestamp":"2026-10-15T12:00:00Z","injectedSkills":[],"matchedSkills":[],"droppedByBudget":0}`, notSession: true},
+		{name: "empty file", body: ""},
+		{name: "empty native message", body: `{"type":"user","sessionId":"native","message":{"role":"user","content":""}}`},
+		{name: "malformed native body", body: `{"type":"assistant","message":"unfinished"}`, partial: true},
+		{name: "native metadata only", body: `{"sessionId":"native","type":"future-native-record"}`},
+		{name: "malformed only", body: `{"type":"user",`, partial: true},
+		{name: "ambiguous mixed incomplete", body: "{\"event\":\"telemetry\"}\n{\"type\":", partial: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "arbitrary-name.jsonl")
+			if err := os.WriteFile(path, []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			session, err := claudecode.Adapter{}.ParseFile(context.Background(), path)
+			if tc.notSession {
+				if !errors.Is(err, adapter.ErrNotSession) || session != nil {
+					t.Fatalf("not classified as telemetry: %v", err)
+				}
+				return
+			}
+			if err != nil || session == nil || session.Partial != tc.partial {
+				t.Fatalf("native/incomplete session lost: session=%+v err=%v", session, err)
+			}
+		})
 	}
 }

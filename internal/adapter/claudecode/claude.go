@@ -79,6 +79,7 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 		PurposeOrigin: model.OriginUnavailable,
 	}
 	seq := 0
+	validRecords, nativeEvidence := 0, false
 	err = adapter.ScanLines(f, func(line []byte, lineNo int) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -91,6 +92,14 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 			s.ParseErrors++
 			s.Partial = true
 			return nil
+		}
+		validRecords++
+		if rec.SessionID != "" {
+			nativeEvidence = true
+		}
+		switch rec.Type {
+		case "user", "assistant", "system", "attachment", "summary", "progress", "file-history-snapshot", "queue-operation", "last-prompt", "custom-title":
+			nativeEvidence = true
 		}
 		if s.ID == "" {
 			s.ID = rec.SessionID
@@ -130,6 +139,11 @@ func (a Adapter) ParseFile(ctx context.Context, path string) (*model.Session, er
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse claude log %s: %w", path, err)
+	}
+	// Only reject confirmed unrelated JSONL. Empty files and files containing
+	// malformed records remain eligible partial sessions, even without an ID yet.
+	if validRecords > 0 && !nativeEvidence && s.ParseErrors == 0 {
+		return nil, adapter.ErrNotSession
 	}
 	adapter.DerivePurpose(s)
 	return s, nil

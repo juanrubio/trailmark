@@ -3,12 +3,13 @@
 - **Working name:** Trailmark (not name-cleared)
 - **Status:** Draft
 - **Date:** 2026-10-14
+- **Visual requirements updated:** 2026-10-16
 
 ## 1. Opportunity
 
 Developers increasingly work across several AI coding agents. Each agent keeps its own session history, format, and project picker. After several days across different projects, it is easy to forget what each session was for, where the work happened, and which conversation would be useful to continue.
 
-Trailmark is a local overview of recent coding-agent work. It helps users recognize a session's purpose and project/path at a glance, recall where they left off, and decide whether to resume, fork, or start clean. It reads existing native logs and opens directly onto the last seven days. Transcript reading and content search support this decision and remain secondary MVP capabilities.
+Trailmark is a local overview of recent coding-agent work. It helps users recognize a session's purpose and project/path at a glance, recall where they left off, and decide whether to resume, fork, or start clean. It reads existing native logs and opens directly onto the last seven days, expanding to 30 days or All time when needed to show available work. Transcript reading and content search support this decision and remain secondary MVP capabilities.
 
 ## 2. Target users
 
@@ -40,10 +41,11 @@ Users need to:
 - A provider-adapter model must normalize different native log formats into a common session view.
 - The product must work with existing sessions, not only sessions created by Trailmark or an ACP wrapper.
 - The first release must prioritize Claude Code and Codex; additional providers must be addable without changing the core UI.
-- The default screen must work without a query: a seven-day recent-session overview with a stable selection and purpose/project-first visual hierarchy.
+- The default screen must work without a query: prefer a seven-day recent-session overview with a stable selection and purpose/project-first visual hierarchy. When the active project/harness has only older work, automatically expand to 30 days or All time; respect a time window the user explicitly chose. An inactive project should not appear to have no history just because the default window is too short.
 - Session purpose must use a native title or a clearly labeled request excerpt. The overview must also show the latest substantive exchange, with source navigation and explicit unavailable states. Preview quality is a release criterion.
 - Any outcome shown must distinguish an agent's completion claim from a recorded tool result; neither establishes the current state of the repository.
 - The primary experience must be usable entirely by keyboard, with a clear selection, contextual key hints, restrained styling, and usable wide and narrow layouts. See the [UX specification](UX.md).
+- The implemented TUI must preserve the mockups' visual hierarchy: distinct session cards and day groups, recognizable project paths, an unmistakable selected session, and clear separation between browsing, detail, and continuation actions. Color and spacing must support recognition in dark and light terminals, with selection and grouping still understandable without color. Exact palettes and terminal adaptations belong in the [UX visual specification](UX.md#8-visual-and-state-rules).
 - Resume, fork, and clean-session choices must explain their history behavior and target directory. Native support must be explicit; unsupported forking must not be simulated by relabeling a clean session.
 - Search must return highlighted excerpts and open at the matching message. Users must be able to move between matches without losing their search context.
 - Users must be able to copy selected context with provenance. Project grouping must retain the original working directory and distinguish worktrees.
@@ -86,6 +88,7 @@ Before expanding providers or adding generated summaries, compare Trailmark with
 - The cached overview opens within a provisional 2-second target, and selection/preview changes respond within 100 ms p95 on the declared benchmark corpus and machine. Secondary search targets are specified in the PRD.
 - Scanning and browsing leave source logs unchanged; the MVP makes no network requests and sends no transcript content off-device.
 - Missing, excluded, stale, and partially indexed sources are distinguishable from a genuine search with no matches.
+- Visual acceptance includes comparison with the supplied mockups in wide and narrow layouts. Functional correctness alone does not establish that selection, grouping, paths, and continuation choices are visually clear; record rendering evidence separately from human recognition results.
 
 ## 8. Release decisions and later scope
 

@@ -6,6 +6,7 @@ package adapter
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -13,6 +14,10 @@ import (
 
 	"github.com/juanrubio/trailmark/internal/model"
 )
+
+// ErrNotSession identifies a file positively classified as non-session data.
+// Malformed or incomplete session logs must retain the normal partial result.
+var ErrNotSession = errors.New("not a native session log")
 
 // Adapter parses the native logs of one provider.
 type Adapter interface {

@@ -258,3 +258,21 @@ func dayHeading(t *time.Time, now time.Time) string {
 		return t.Format("Mon 02 Jan")
 	}
 }
+
+// chooseAutomaticWindow widens the default scope only when its project and
+// harness have no recent work. Text filtering never drives this decision.
+func (m *appModel) chooseAutomaticWindow() {
+	if m.manualWindow {
+		return
+	}
+	for _, days := range []int{7, 30, 0} {
+		m.windowDays = days
+		for _, row := range m.sessions {
+			if (m.harness == "" || row.Provider == m.harness) && m.inProject(row) && m.inWindow(row) {
+				return
+			}
+		}
+	}
+	// There is no data at any age in this scope; retain the default label.
+	m.windowDays = 7
+}

@@ -3,12 +3,13 @@
 - **Working name:** Trailmark (not name-cleared)
 - **Status:** Draft
 - **Date:** 2026-10-14
+- **Visual requirements updated:** 2026-10-16
 - **Related:** [MRD](MRD.md)
 - **Interaction design:** [TUI experience and wireframes](UX.md)
 
 ## 1. Summary
 
-Trailmark is a local Go TUI for remembering recent coding-agent work and deciding how to continue it. Its primary screen shows the last seven days of sessions, with purpose and project/path taking visual priority.
+Trailmark is a local Go TUI for remembering recent coding-agent work and deciding how to continue it. Its primary screen prefers the last seven days of sessions and expands to older history when that scope is empty, with purpose and project/path taking visual priority.
 
 The primary workflow is to recognize recent work, recall where it happened, and choose resume, fork, or a clean session. Transcript reading and content search remain supporting MVP features. The TUI is the product surface; a separate command suite is outside the MVP.
 
@@ -39,7 +40,7 @@ Session history is fragmented across agent-specific directories and formats. Aft
 
 ### Remember recent work — primary
 
-The user opens Trailmark after a break. The last seven days are visible across projects, grouped by day. Each compact card foregrounds what the session was for and its project/path. Moving the selection updates an overview with the full cwd, initial request, and latest substantive exchange. The user can narrow to a project or extend the time window without leaving the screen.
+The user opens Trailmark after a break. The last seven days are visible across projects, grouped by day; when empty, the initial view expands to 30 days, then All time, until available sessions appear. Each compact card foregrounds what the session was for and its project/path. Moving the selection updates an overview with the full cwd, initial request, and latest substantive exchange. The user can narrow to a project or extend the time window without leaving the screen.
 
 ### Choose how to continue — primary
 
@@ -73,20 +74,22 @@ Across these workflows, a malformed or unavailable source must not prevent brows
 1. **Discovery and indexing**
    - Detect known Claude Code and Codex log locations on Linux, with configurable additional roots.
    - Support root/project exclusions before indexing and remove already derived data when a new exclusion is applied.
-   - Read source logs without modifying them; tolerate partial writes, truncated records, and unknown fields.
+   - Read source logs without modifying them; tolerate partial writes, truncated records, and unknown fields. Ignore confidently identified non-session JSONL such as plugin telemetry, and remove its stale derived cards on reindex. Do not reject a damaged or incomplete native log solely because it lacks successfully parsed messages.
    - Normalize available session IDs, title/first prompt, agent, timestamps, original cwd, project/worktree identity, source path, and explicit session relationships.
    - Maintain an incremental local index/cache so repeated launches do not need to reparse every transcript. Storage format and exact location are implementation decisions.
    - Show scanned roots, last successful scan, progress, and counts of indexed, partial, unavailable, and excluded sources. Explain empty results when coverage is incomplete.
 2. **Session list and cards**
    - Default to today plus the previous six calendar days in the user's local timezone. Include sessions by last recorded activity, even if they started earlier. Offer Today, 3 days, 7 days, 30 days, and All time windows, plus a **Show all time** shortcut in the list footer. These are view filters, not retention limits; older sessions remain indexed and accessible.
+   - At startup and when changing project/harness in automatic mode, select the first populated window from 7 days, 30 days, and All time. Apply the same policy when initial scan results arrive and refreshed sessions are applied. Test availability within the active project and harness, ignoring metadata text filters; display the actual chosen window in the header. An explicit time selection disables automatic adjustment for the rest of the run. Truly empty scopes retain an honest empty state; unknown timestamps remain reachable through All time.
    - Group sessions by their last-active day, using Today, Yesterday, then weekday/date headings. Within each day, sort newest first. A session appears once, not once per event. Unknown activity dates remain discoverable under All time with an explicit unknown label.
    - Make the purpose label the first line and project/path the second; show provider and relative last activity as quieter supporting information. Retain enough path context to distinguish same-named directories/worktrees.
    - Show a selected-session overview beside the list where space permits: purpose, full original cwd, provider, precise last activity, initial request, and latest substantive exchange. Provide the same information in a keyboard-accessible single-pane view at narrower widths.
    - Keep explicit child sessions collapsed beneath their parent when both satisfy the active filters, with a visible child count and an expand action. A matching child whose parent is missing or outside the filters remains a visible labeled entry under its own activity date. Children remain searchable; do not infer parentage from timing.
-   - Keep selection stable during background scans. Indicate new activity and let the user apply an updated ordering explicitly rather than moving the selected row under them.
+   - Keep selection stable during background scans. Indicate new activity and let the user apply an updated ordering explicitly rather than moving the selected row under them. Apply confirmed removals immediately, including files reclassified as non-session data: cards and selector counts must agree with the refreshed index without requiring `R`. Preserve surviving selection and ordering; if the selection disappears, show the nearest remaining session and refresh its overview.
    - Clearly mark missing or inferred metadata rather than presenting guesses as facts.
 3. **Search and filters**
-   - Keep list filtering and transcript-content search distinct. `/` on the overview filters visible purpose labels, project/path, and provider; it preserves chronological order and does not implicitly search every transcript.
+   - Keep list filtering and transcript-content search distinct. `/` in the session list filters visible purpose labels, project/path, and provider; it preserves chronological order and does not implicitly search every transcript.
+   - The `/` action depends on focus: in the session list it filters cards; in the focused selected-session overview it finds literal, case-insensitive text within the displayed details. Overview find highlights and reveals matches, reports no results explicitly, and supports `[`/`]` navigation without changing list filters. Input owns printable action keys, cancellation restores the applied query, and changing sessions resets local find state.
    - Provide a clearly labeled **Harness** selector (`h`) alongside project and time filters: **All harnesses**, **Codex**, and **Claude Code** for the MVP. Harness means the coding tool that created the session; model and child-agent role are separate concepts.
    - Combine harness, repository/path, and time filters by intersection. Keep the active harness visible, preserve the other filters when it changes, and retain it when opening/closing an overview, transcript, or continuation sheet. Apply the same harness scope to cross-session content search. Choosing All harnesses clears only the harness filter.
    - Start with all projects visible; provide a current-project shortcut and an obvious toggle back to all projects. Show the active scope. Outside a recognized project, explain why the shortcut is unavailable and retain path filtering.
@@ -140,8 +143,14 @@ Semantic search, generated summaries, and additional adapters remain deferred un
 - The normative [UX specification](UX.md) defines the screen hierarchy, wireframes, key map, continuation sheet, visual rules, and empty/error states.
 - Launch with focus on the recent-session list and its newest entry; no welcome wizard, empty search prompt, or command palette should block the overview.
 - Use arrows/j/k for list movement, Enter for the selected overview, Esc to return, and q to quit from the home screen. Contextual key hints must explain scope-dependent actions.
-- Use two panes at 110 columns or wider and a single-pane flow below that. Core operations must remain usable at 80×24; resizing must preserve selection and context.
+- When `q` would quit, require a confirmation modal with Cancel selected by default. Cancelling preserves browsing state; nested-view back/close behavior and Ctrl+C remain unchanged.
+- Use two panes at 110 inner content columns or wider (normally 114 terminal columns with side gutters) and a single-pane flow below that. Core operations must remain usable at 80×24; resizing must preserve selection and context.
 - Give purpose and directory the strongest visual emphasis. Use restrained borders and color, textual provider labels, visible keyboard focus, and readable contrast in light/dark and no-color terminals.
+- Treat the mockup palette and separation rules in [UX section 8](UX.md#8-visual-and-state-rules) as the visual target. Use green for selection/focus, blue for paths, muted metadata and rules, and a contrasting search-match background. A selected session has a full-card background and a continuous left marker; color must not be its only selection cue.
+- Make the status bar visually scannable with green shortcut keys, muted descriptions, amber coverage/source warnings, and blue informational/find status. Preserve labels and no-color usability.
+- Reserve a small blank gutter around application content: normally two columns on each side and one row above/below, reducing it at the minimum terminal size. Compute text wrapping and scrolling from the remaining inner viewport; ordinary transcript text must fit without horizontal scrolling. Preserve exact copy payloads.
+- Keep wide panes at their allocated widths with a full-height divider. Use full-width header/footer rules, pin the footer to the bottom, and separate continuation actions from scrolling overview content. Day rules and whitespace distinguish sessions without a heavy border around every card.
+- Apply the same palette and hierarchy to selectors, continuation preparation, copying, transcript/search, and settings. Terminal cell dimensions replace browser typography and pixel spacing; the mockup's outer presentation controls and browser chrome are not application features.
 - Keep transcript and search views one explicit action away and preserve the overview's filters, selection, and scroll position when returning.
 - Refresh, source status, exclusions, and cache clearing are TUI operations; routine use must not require a CLI subcommand.
 - No action in the MVP may mutate or delete provider logs.
@@ -204,6 +213,20 @@ Internal session references must still disambiguate provider and source store. C
 - A malformed or actively written log does not prevent other sessions from appearing; coverage and freshness identify the affected source.
 - Exclusions, confirmed deletion, temporary root unavailability, removal of a configured root, and cache clearing follow the lifecycle rules in section 8.
 - The MVP operates without network requests. Parser tests use representative, sanitized fixtures; TUI tests cover wide and 80×24 layouts, resize, list/overview, project/time filtering, continuation sheets, search, transcript, copying, empty states, and partial/error states. Refresh and source/cache management are reachable without subcommands.
+
+### Visual acceptance
+
+- Compare fictional fixture renders with the [mockup gallery](UX.md#concept-screen-gallery) at 120×40 and 160×45, and exercise the list/overview flow at 80×24. Check dark and light palettes plus no-color output.
+- Verify full-screen dimensions, continuous pane separation, full-width header/footer rules, and a footer that stays at the bottom with short or empty content. No content may overflow into another pane.
+- The selected card's background and left marker span every card row, including padded cells. Paths remain distinct from metadata; adjacent cards and day groups remain recognizable without color.
+- Overview sections and the continuation action area are visibly separated. Selectors and preparation sheets have consistent framing; transcript messages and search-result groups have separators; matching text uses a contrasting background.
+- Resize, long paths/titles, expanded child sessions, and scrolling must preserve readable content, visible selection/focus, reachable actions, and exact copy payloads. Borders and padding count toward the available terminal dimensions.
+- Page Up/Down must traverse the full transcript across loaded-message boundaries, including history evicted from the bounded reading buffer.
+- Scrolling beyond either end must not accumulate an invisible offset. The first reverse scroll must move immediately, and search jumps must reveal their target after prior scrolling. Exercise this in both the transcript and overview with long content.
+- Automatic time selection must show older-only sessions at startup, after an initial scan, and when choosing an inactive project/harness. Verify 30-day and All-time fallback, unknown timestamps, truly empty scopes, and preservation of explicit time choices and text-filter scope.
+- Overview find must work with offscreen and repeated matches, no matches, cleared/cancelled queries, narrow/wide layouts, and resize. Find phrases and path substrings even when wrapping splits them across lines. Match text rather than terminal style sequences; the active match stays distinguishable and continuation actions remain reachable.
+- Exercise the emitted terminal control sequences as well as the model's text layout. Unsupported spacing optimizations must not shift pane boundaries or overlap text on supported terminals.
+- Record automated rendering checks separately from a real-terminal visual check and from the human recognition tasks below. A passing text-content test or a browser mockup is not evidence of terminal color fidelity.
 
 ### Primary UX validation
 
