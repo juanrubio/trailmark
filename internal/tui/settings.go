@@ -4,6 +4,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"context"
 	"fmt"
+	"github.com/juanrubio/trailmark/internal/scan"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +28,7 @@ type SettingsStatus struct {
 	Indexed           int
 	Partial           int
 	Excluded          int
+	Deferred          int
 	DatabaseBytes     int64
 	DatabaseSizeKnown bool
 	IndexPath         string
@@ -75,6 +77,7 @@ type settingsState struct {
 	cursor      int
 	mode        string // list, input, confirm, theme
 	themeCursor int
+	scopeCursor int
 	inputKind   string // root or exclusion
 	input       string
 	provider    model.Provider
@@ -106,6 +109,9 @@ func (m *appModel) reloadSettings() {
 	}
 	st.items = nil
 	st.items = append(st.items, settingsItem{kind: "action", label: "Rescan now", action: "rescan"}, settingsItem{kind: "action", label: "Theme: " + themeLabel(m.themeName), action: "theme"})
+	if _, ok := m.deps.settings.(indexingScopeStore); ok {
+		st.items = append(st.items, settingsItem{kind: "action", label: "Indexing scope: " + indexingScopeLabel(m.indexingDays()), action: "indexing-scope"})
+	}
 	for _, r := range roots {
 		label := providerLabel(r.Provider) + "  " + r.Path
 		if r.Configured {
@@ -135,6 +141,8 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	st := m.settings
 	s := msg.String()
 	switch st.mode {
+	case "indexing-scope":
+		return m.onIndexingScopeKey(s, false)
 	case "theme":
 		switch s {
 		case "esc", "q":
@@ -229,6 +237,14 @@ func (m *appModel) onSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if st.cursor >= 0 && st.cursor < len(st.items) {
 			switch st.items[st.cursor].action {
+			case "indexing-scope":
+				st.mode = "indexing-scope"
+				st.status = ""
+				for i, days := range indexingChoices {
+					if days == m.indexingDays() {
+						st.scopeCursor = i
+					}
+				}
 			case "theme":
 				st.mode = "theme"
 				st.status = ""
@@ -345,18 +361,29 @@ func (m *appModel) rescanCmd(apply bool) tea.Cmd {
 	}
 	rescan := m.deps.rescan
 	ctx := m.ctx
-	return func() tea.Msg {
+	cmd := func() tea.Msg {
 		sessions, failed, err := rescan(ctx)
-		if err != nil {
-			return scanDoneMsg{id: id, err: err}
-		}
-		return scanDoneMsg{id: id, sessions: sessions, failedRoots: failed}
+		return scanDoneMsg{id: id, sessions: sessions, failedRoots: failed, err: err}
 	}
+	if len(m.sessions) == 0 {
+		m.initialIndexing = true
+		m.initialScanID = id
+		m.initialCanceling = false
+		m.initialFrame = 0
+		m.initialStarted = m.now()
+		m.initialProgress = scan.Progress{}
+		m.settings = nil
+		return tea.Batch(cmd, m.initialTick())
+	}
+	return cmd
 }
 
 // viewSettings renders the sources/settings view.
 func (m *appModel) viewSettings(w, h int) string {
 	st := m.settings
+	if st.mode == "indexing-scope" {
+		return m.viewIndexingScope(w, h, false)
+	}
 	if st.mode == "theme" {
 		lines := []string{m.styles().heading.Render("Theme"), "", m.styles().path.Render("Current: " + themeLabel(m.themeName)), ""}
 		for i, choice := range themeChoices {
@@ -384,6 +411,7 @@ func (m *appModel) viewSettings(w, h int) string {
 			unavailable++
 		}
 	}
+	lines = append(lines, m.styles().muted.Render(fmt.Sprintf("Older unindexed files deferred (last scan): %d", st.settings.Deferred)))
 	lines = append(lines, fmt.Sprintf("Indexed: %d sessions · Partial: %d · Unavailable roots: %d · Excluded (last scan): %d", st.settings.Indexed, st.settings.Partial, unavailable, st.settings.Excluded))
 	if st.settings.LastScan != "" {
 		lines = append(lines, "Last successful scan: "+st.settings.LastScan)

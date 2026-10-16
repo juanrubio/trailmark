@@ -7,6 +7,29 @@ E5-1620 v2 @ 3.70 GHz (8 cores), 39 GiB RAM, Linux
 live outside the repository (`~/bench-trailmark`) and are never
 committed.
 
+## What users should expect
+
+A large all-history first scan can take hours. The recorded cold scan
+below consumed approximately **2 hours 18 minutes of CPU time** for
+**10,000 sessions / 1.19 GiB**. CPU time is not wall-clock duration, and
+session count alone is not a useful predictor: transcript sizes and message
+counts vary widely. Do not extrapolate a guaranteed rate or finish time
+from this corpus. Peak indexing memory was not captured.
+
+First-run scope choices now let users defer unindexed files older than
+7 or 30 days, based on file modification time, or choose All history.
+This reduces work when the collection contains many older files; it does
+not accelerate included files. A recently modified long transcript can
+still take substantial time. The progress indicator reports activity and
+counts, not a percentage or ETA. Esc cancels while retaining completed
+index entries. Expand coverage later in Sources and settings.
+
+Cached browsing is a separate operation: opening the measured 10,000-session
+list took **103 ms**, without waiting for a rescan. Unchanged indexed logs
+are skipped on subsequent scans. These historical results have not been
+re-measured for the progress/scope changes, and no scoped-indexing duration
+or reliable per-100/per-1,000-session estimate is available.
+
 ## Corpus
 
 Generated with `go run ./cmd/trailmark-bench -dir ~/bench-trailmark

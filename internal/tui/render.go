@@ -21,6 +21,10 @@ func (m *appModel) View() tea.View {
 	case m.overlay == overlayQuit:
 		pw, ph := min(w, 50), min(h, 11)
 		content = lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, m.viewQuitModal(pw, ph))
+	case m.chooseIndexingScope:
+		content = m.viewIndexingScope(w, h, true)
+	case m.initialIndexing:
+		content = m.viewInitialIndexing(w, h)
 	case m.overlay == overlayHelp:
 		content = m.viewHelp(w, h)
 	case m.overlay == overlaySelector:
@@ -109,6 +113,12 @@ func (m *appModel) renderHeader(w int) string {
 	if !m.noColor {
 		bg := m.palette().raised
 		raised = m.restoreSurface(raised, bg)
+	}
+	if hint := m.indexingCoverageHint(); hint != "" {
+		if w < 110 {
+			hint = "Index new files: " + itoa(m.indexingDays()) + "d | , Settings"
+		}
+		return raised + "\n" + m.styles().muted.Render(truncate(hint, w)) + "\n" + m.rule(w)
 	}
 	return raised + "\n" + m.rule(w)
 }
@@ -505,7 +515,10 @@ func windowLines(lines []string, keepVisible, h int) string {
 
 func (m *appModel) emptyState(w int) string {
 	if len(m.sessions) == 0 {
-		return "No session sources found yet.\n\nSessions appear after the first scan completes."
+		if m.scanFinished {
+			return "No sessions indexed.\n\nPress , to check sources in Settings or rescan."
+		}
+		return "No session sources found yet.\n\nPress , to check sources in Settings."
 	}
 	if m.filterText != "" {
 		return "No sessions match the active filter.\n\nFilter: " + m.filterText + "\nPress / to edit it, or clear the text to see every session in scope."

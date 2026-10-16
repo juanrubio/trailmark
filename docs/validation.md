@@ -304,3 +304,47 @@ The wrapper completed successfully, including the application build and
 VHS tape validation. Shell/Python syntax, README local links, GIF decoding,
 and `git diff --check` passed. This media check does not replace physical
 terminal acceptance or provider-compatibility tests.
+
+### Initial indexing progress and scope (2026-10-16)
+
+An empty index with no saved scope now asks for files modified in the last
+7 days, last 30 days (recommended), or All history before scanning. The
+choice is persisted and can be expanded through Sources and settings.
+Older, unindexed files are deferred before parsing. Cached files remain
+available and are refreshed; exclusions and confirmed deletion pruning
+still apply. Populated legacy indexes retain all-history behavior.
+
+The empty-index progress screen uses a timer-driven activity indicator,
+live counts, elapsed time, and a sanitized current source. Discovery remains
+a single streaming pass, so no total, percentage, or ETA is implied. Esc
+cancels and loads committed sessions. Empty-index rescans from Settings
+use the same screen; quit confirmation stays available. Shutdown cancels
+and waits for admitted scan work before the database can close.
+
+Regression tests cover progress before slow parsing, excluded/deferred
+outcomes, cancellation without false parse failures, retained commits,
+scan shutdown and queued commands, scope persistence and save rollback,
+mtime boundaries, expansion to All history, retained cached files,
+exclusions, deletions, and scope changes taking effect on the next scan.
+UI tests cover first-run deferral until confirmation, skipping setup,
+save errors, cached startup, completion/error/empty states, Settings
+rescans, and stopping animation after completion. Geometry checks include
+40×12, 80×24, and wide layouts, all themes, light/dark, ASCII and no-color.
+
+`make check build` and `go test -race ./internal/config ./internal/scan
+./internal/tui` passed. After the final label and stale-notice correction,
+targeted indexing/scope tests passed and the binary was rebuilt.
+A real PTY smoke test ran the built binary with six fictional JSONL files:
+the chooser left the index empty until confirmation, the 30-day choice
+indexed three recent files, and selecting All history in Settings indexed
+the remaining three. Config persistence and confirmed quit were verified.
+No real user sessions were read by this smoke test.
+
+Synthetic ANSI previews of the picker and progress screen were visually
+inspected at 80×24 and 40×12, including a light variant. A compact label
+was shortened after inspection to avoid clipping. Physical-terminal color
+fidelity and large-corpus performance have not been re-measured. README,
+configuration guidance, and benchmarks distinguish the historical cold
+scan's CPU time from a wall-clock estimate; scope limits reduce included
+work but do not improve per-file throughput. The README demo fixture now
+sets All history explicitly so its existing recording flow remains valid.

@@ -29,6 +29,7 @@ const walkedRootsKey = "walked_roots"
 
 // Stats reports one scan's outcome.
 type Stats struct {
+	Deferred    int // old, previously unindexed files left for a broader scope
 	Discovered  int
 	Indexed     int
 	Skipped     int // unchanged indexed files or confirmed non-session data
@@ -39,14 +40,27 @@ type Stats struct {
 	FailedRoots []string // roots that could not be walked this run
 }
 
+// Progress is a runtime snapshot. Discovered grows during the streaming walk.
+type Progress struct {
+	Phase    string
+	Stats    Stats
+	Provider model.Provider
+	Path     string
+}
+
 // Scanner runs discovery plus indexing over configured roots.
 type Scanner struct {
 	mu       sync.Mutex // serializes scans: interleaved prune passes are unsafe
 	Index    *index.Index
 	Adapters map[model.Provider]adapter.Adapter
 	Config   *config.Config
-	// Progress, when set, is called after each file with running stats.
+	// Progress receives running statistics for discovery and indexing.
+	// Observer also receives the phase and current source path.
 	Progress func(Stats)
+	Observer func(Progress)
+	// Now supplies a fixed scan-start clock, primarily for deterministic boundary tests.
+	Now    func() time.Time
+	cutoff time.Time // protected by mu; fixed for the entire scan
 }
 
 // Scan walks every effective root. Roots that fail to walk are named
@@ -57,7 +71,20 @@ type Scanner struct {
 func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
+	now := time.Now()
+	if sc.Now != nil {
+		now = sc.Now()
+	}
+	sc.cutoff = time.Time{}
+	if days, _ := sc.Config.IndexingScope(); days > 0 {
+		sc.cutoff = now.Add(-time.Duration(days) * 24 * time.Hour)
+	}
 	var stats Stats
+	if err := ctx.Err(); err != nil {
+		return stats, err
+	}
+	sc.observe("discovering", &stats, "", "")
+	defer func() { sc.observe("done", &stats, "", "") }()
 	seen := map[string]bool{}
 	currentRoots := map[string]bool{}
 	var walkedRoots []string
@@ -73,17 +100,23 @@ func (sc *Scanner) Scan(ctx context.Context) (Stats, error) {
 		}
 		canonRoot := config.Canonical(root.Path)
 		currentRoots[canonRoot] = true
-		if err := sc.scanRoot(ctx, canonRoot, ad, seen, &stats); err != nil {
+		if err := sc.scanRoot(ctx, canonRoot, ad, root.Provider, seen, &stats); err != nil {
 			if ctx.Err() != nil {
 				return stats, ctx.Err()
 			}
 			stats.FailedRoots = append(stats.FailedRoots, root.Path)
+			sc.observe("discovering", &stats, root.Provider, root.Path)
 			sc.recordRootStatus(ctx, canonRoot, "unavailable")
 			continue
 		}
 		sc.recordRootStatus(ctx, canonRoot, "ok")
 		walkedRoots = append(walkedRoots, canonRoot)
 	}
+
+	if err := ctx.Err(); err != nil {
+		return stats, err
+	}
+	sc.observe("finishing", &stats, "", "")
 
 	// Prune confirmed deletions and removed roots' derived data.
 	pruneRoots := append([]string{}, walkedRoots...)
@@ -229,12 +262,12 @@ func underAny(path string, roots []string) bool {
 // with a visited set so cycles cannot loop. File and directory
 // symlinks resolve to canonical paths, which dedupes overlapping
 // roots and symlinked stores.
-func (sc *Scanner) scanRoot(ctx context.Context, root string, ad adapter.Adapter, seen map[string]bool, stats *Stats) error {
+func (sc *Scanner) scanRoot(ctx context.Context, root string, ad adapter.Adapter, provider model.Provider, seen map[string]bool, stats *Stats) error {
 	visitedDirs := map[string]bool{}
-	return sc.walkDir(ctx, root, ad, seen, stats, visitedDirs)
+	return sc.walkDir(ctx, root, ad, provider, seen, stats, visitedDirs)
 }
 
-func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, seen map[string]bool, stats *Stats, visitedDirs map[string]bool) error {
+func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, provider model.Provider, seen map[string]bool, stats *Stats, visitedDirs map[string]bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -243,6 +276,7 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 		return nil
 	}
 	visitedDirs[canonDir] = true
+	sc.observe("discovering", stats, provider, canonDir)
 	entries, err := os.ReadDir(canonDir)
 	if err != nil {
 		return err
@@ -257,7 +291,7 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 			// Still route the file through indexFile so it counts
 			// as seen: an unstat-able file must not look deleted.
 			if filepath.Ext(entry.Name()) == ".jsonl" {
-				if err := sc.indexFile(ctx, path, ad, seen, stats); err != nil {
+				if err := sc.indexFile(ctx, path, ad, provider, seen, stats); err != nil {
 					return err
 				}
 			} else {
@@ -273,7 +307,7 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 				continue
 			}
 			if target.IsDir() {
-				if err := sc.walkDir(ctx, path, ad, seen, stats, visitedDirs); err != nil {
+				if err := sc.walkDir(ctx, path, ad, provider, seen, stats, visitedDirs); err != nil {
 					return err
 				}
 				continue
@@ -281,7 +315,7 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 			mode = target.Mode()
 		}
 		if info.IsDir() || mode.IsDir() {
-			if err := sc.walkDir(ctx, path, ad, seen, stats, visitedDirs); err != nil {
+			if err := sc.walkDir(ctx, path, ad, provider, seen, stats, visitedDirs); err != nil {
 				return err
 			}
 			continue
@@ -289,20 +323,26 @@ func (sc *Scanner) walkDir(ctx context.Context, dir string, ad adapter.Adapter, 
 		if filepath.Ext(entry.Name()) != ".jsonl" {
 			continue
 		}
-		if err := sc.indexFile(ctx, path, ad, seen, stats); err != nil {
+		if err := sc.indexFile(ctx, path, ad, provider, seen, stats); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapter, seen map[string]bool, stats *Stats) error {
+func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapter, provider model.Provider, seen map[string]bool, stats *Stats) error {
 	canon := config.Canonical(path)
 	if seen[canon] {
-		return nil // overlapping root: first walk wins
+		return nil
 	}
 	seen[canon] = true
 	stats.Discovered++
+	sc.observe("indexing", stats, provider, canon)
+	defer func() { sc.observe("indexing", stats, provider, canon) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if sc.Config.Excluded(canon) {
 		stats.Excluded++
 		return sc.Index.Remove(ctx, canon)
@@ -321,10 +361,16 @@ func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapte
 			return sc.Index.Remove(ctx, canon)
 		}
 		stats.Skipped++
-		sc.report(stats)
+		return nil
+	}
+	if !wasIndexed && !sc.cutoff.IsZero() && info.ModTime().Before(sc.cutoff) {
+		stats.Deferred++
 		return nil
 	}
 	session, err := ad.ParseFile(ctx, canon)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if errors.Is(err, adapter.ErrNotSession) {
 		if err := sc.Index.Remove(ctx, canon); err != nil {
 			return err
@@ -333,12 +379,10 @@ func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapte
 			stats.Pruned++
 		}
 		stats.Skipped++
-		sc.report(stats)
 		return nil
 	}
 	if err != nil {
 		stats.Failed++
-		sc.report(stats)
 		return nil // one bad log must not hide the others
 	}
 	// Project exclusions match the recorded cwd. The transcript was
@@ -358,8 +402,16 @@ func (sc *Scanner) indexFile(ctx context.Context, path string, ad adapter.Adapte
 	if session.Partial {
 		stats.Partial++
 	}
-	sc.report(stats)
 	return nil
+}
+
+func (sc *Scanner) observe(phase string, stats *Stats, provider model.Provider, path string) {
+	snapshot := *stats
+	snapshot.FailedRoots = append([]string(nil), stats.FailedRoots...)
+	if sc.Observer != nil {
+		sc.Observer(Progress{Phase: phase, Stats: snapshot, Provider: provider, Path: path})
+	}
+	sc.report(&snapshot)
 }
 
 func (sc *Scanner) report(stats *Stats) {

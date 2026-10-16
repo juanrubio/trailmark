@@ -326,7 +326,10 @@ when no report arrives. No-color mode leaves background painting disabled.
 
 | Situation | What the TUI shows and offers |
 | --- | --- |
-| Initial scan in progress | Progress and discovered cards as they become available; navigation remains usable. |
+| Empty index, no saved indexing scope | Ask which files to index: modified in the last 7 days, last 30 days (recommended), or All history. State that large archives can take hours; Enter saves and starts, Esc skips, and `q` opens quit confirmation. Do not start parsing before confirmation. |
+| Initial scan with no cached sessions | A dedicated screen with an animated activity indicator, running file counts, elapsed time, and the current source. Discovery has no known total, so show activity rather than a percentage. Esc stops the scan and opens sessions already saved; `q` opens the usual quit confirmation. Keep these controls responsive during indexing. |
+| Initial scan stopped or failed | Leave the progress screen, explain the outcome, and show any committed sessions. With no sessions, retain access to source settings and Rescan now. The next launch checks sources again, reusing unchanged indexed files. |
+| Launch with cached sessions | Open the session list immediately and refresh in the background, preserving selection and explicit application of new ordering. |
 | No sessions in the automatic seven-day scope | Try 30 days, then All time; show the chosen scope in the header. If no sessions exist at any age, retain the empty state and source-status actions. |
 | No sessions in an explicitly selected window | Keep the chosen window and show its empty state with scope/source-status actions. |
 | No configured/detected sources | **No session sources found** with Add root and source settings. |
@@ -338,6 +341,14 @@ when no report arrives. No-color mode leaves background painting disabled.
 | Clipboard unavailable | Selectable command/context text and a clear failed-copy state. |
 
 Settings expose roots, exclusions, and cache clearing within the TUI. The cache-clear action explains that it removes Trailmark's derived data, preserves source logs and configuration, and that scanning can rebuild it. Keep maintenance controls out of the normal recent-work flow.
+
+Settings also expose **Indexing scope**. Its file-modification cutoff
+defers older files not yet indexed; cached history is retained and kept
+fresh. Changing scope saves the choice and rescans. Show limited coverage
+in browsing and empty states, with Settings as the route to older history.
+The list's **All time** filter covers indexed sessions only and does not
+expand indexing scope. Keep deferred files distinct from failed or excluded
+files in progress counts.
 
 ## 10. UX acceptance
 

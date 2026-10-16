@@ -35,6 +35,7 @@ Users need to:
 6. Keep private code and transcripts on the local machine by default.
 7. Trust that scanning does not modify the source logs and tolerates incomplete or changing log files.
 8. Understand discovery and indexing coverage, exclude private projects, and control the lifetime of derived local data.
+9. Choose a manageable initial indexing scope, understand that large archives can take hours, see progress, stop without losing already indexed sessions, and reach cached work immediately on later launches.
 
 ## 4. Market requirements
 

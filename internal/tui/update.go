@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,7 +36,37 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.View() // normalize scroll offsets for the resized viewport
 		return m, nil
+	case initialIndexTickMsg:
+		if !m.initialIndexing {
+			return m, nil
+		}
+		m.initialFrame++
+		if m.deps.scanProgress != nil {
+			m.initialProgress = m.deps.scanProgress()
+		}
+		return m, m.initialTick()
 	case scanDoneMsg:
+		if msg.id == 0 {
+			m.scanFinished = true
+		}
+		if m.initialIndexing && msg.id == m.initialScanID {
+			m.applyScanID = 0
+			m.applyNextScan = false
+			m.scanFinished = true
+			m.initialIndexing = false
+			m.failedRoots = msg.failedRoots
+			m.applySessions(msg.sessions)
+			m.notice = ""
+			switch {
+			case errors.Is(msg.err, context.Canceled):
+				m.notice = "Indexing canceled; showing sessions already indexed."
+			case msg.err != nil:
+				m.notice = "Initial indexing failed; showing available sessions. Open Settings (,) to check sources."
+			case len(msg.failedRoots) > 0:
+				m.notice = "Some sources could not be read. Open Settings (,) to check sources."
+			}
+			return m, nil
+		}
 		m.failedRoots = msg.failedRoots
 		if msg.id != 0 && msg.id == m.applyScanID {
 			m.applyScanID = 0
@@ -114,6 +146,25 @@ func (m *appModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onSelectorKey(s)
 	case overlayFilter:
 		return m.onFilterKey(msg)
+	}
+	if m.chooseIndexingScope {
+		return m.onIndexingScopeKey(s, true)
+	}
+	if m.initialIndexing {
+		switch s {
+		case "q":
+			m.overlay, m.quitSelected = overlayQuit, false
+		case "esc":
+			cancel := m.deps.cancelInitialScan
+			if m.initialScanID != 0 {
+				cancel = m.deps.cancelRescan
+			}
+			if !m.initialCanceling && cancel != nil {
+				m.initialCanceling = true
+				cancel()
+			}
+		}
+		return m, nil
 	}
 	if m.settings != nil {
 		return m.onSettingsKey(msg)

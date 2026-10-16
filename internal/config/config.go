@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/juanrubio/trailmark/internal/model"
 )
@@ -22,6 +23,8 @@ type Root struct {
 // user-configured roots; detected defaults live in extraRoots and
 // are never persisted back as if the user had configured them.
 type Config struct {
+	IndexingDays        *int `json:"indexing_days,omitempty"`
+	scopeMu             sync.RWMutex
 	Theme               string   `json:"theme,omitempty"`
 	Roots               []Root   `json:"roots,omitempty"`
 	Exclusions          []string `json:"exclusions,omitempty"`
@@ -113,6 +116,9 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("parse config %s: root for provider %q has an empty path", path, r.Provider)
 		}
 	}
+	if cfg.IndexingDays != nil && !ValidIndexingDays(*cfg.IndexingDays) {
+		return nil, fmt.Errorf("parse config %s: indexing_days must be 0, 7, or 30", path)
+	}
 	cfg.Theme = NormalizeTheme(cfg.Theme)
 	if !cfg.DisableDefaultRoots {
 		cfg.extraRoots = DefaultRoots()
@@ -124,6 +130,15 @@ func Load() (*Config, error) {
 // exclusions, and the default-roots flag) with user-only
 // permissions. Detected defaults are never written back.
 func (c *Config) Save() error {
+	c.scopeMu.Lock()
+	defer c.scopeMu.Unlock()
+	return c.saveLocked()
+}
+
+func (c *Config) saveLocked() error {
+	if c.IndexingDays != nil && !ValidIndexingDays(*c.IndexingDays) {
+		return fmt.Errorf("indexing_days must be 0, 7, or 30")
+	}
 	dir, err := Dir()
 	if err != nil {
 		return err
@@ -150,6 +165,11 @@ func (c *Config) Save() error {
 		}
 		merged[key] = data
 		return nil
+	}
+	if c.IndexingDays == nil {
+		delete(merged, "indexing_days")
+	} else if err := set("indexing_days", *c.IndexingDays); err != nil {
+		return fmt.Errorf("encode config: %w", err)
 	}
 	if err := set("theme", NormalizeTheme(c.Theme)); err != nil {
 		return fmt.Errorf("encode config: %w", err)
@@ -316,4 +336,33 @@ func NormalizeTheme(name string) string {
 	default:
 		return "green"
 	}
+}
+
+// ValidIndexingDays lists the supported file modification age scopes; zero means all.
+func ValidIndexingDays(days int) bool { return days == 0 || days == 7 || days == 30 }
+
+// IndexingScope snapshots the configured age scope without waiting for scans.
+func (c *Config) IndexingScope() (int, bool) {
+	c.scopeMu.RLock()
+	defer c.scopeMu.RUnlock()
+	if c.IndexingDays == nil {
+		return 0, false
+	}
+	return *c.IndexingDays, true
+}
+
+// SetIndexingScope persists the scope and restores the previous value on failure.
+func (c *Config) SetIndexingScope(days int) error {
+	if !ValidIndexingDays(days) {
+		return fmt.Errorf("indexing_days must be 0, 7, or 30")
+	}
+	c.scopeMu.Lock()
+	defer c.scopeMu.Unlock()
+	previous := c.IndexingDays
+	c.IndexingDays = &days
+	if err := c.saveLocked(); err != nil {
+		c.IndexingDays = previous
+		return err
+	}
+	return nil
 }

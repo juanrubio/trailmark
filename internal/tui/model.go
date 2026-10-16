@@ -15,6 +15,7 @@ import (
 	"github.com/juanrubio/trailmark/internal/continuation"
 	"github.com/juanrubio/trailmark/internal/index"
 	"github.com/juanrubio/trailmark/internal/model"
+	"github.com/juanrubio/trailmark/internal/scan"
 )
 
 type overlayKind int
@@ -60,23 +61,36 @@ type overviewFunc func(ctx context.Context, sourcePath string) (*index.Overview,
 
 // dataDeps bundles the index reads the TUI needs.
 type dataDeps struct {
-	overview  overviewFunc
-	page      func(ctx context.Context, sourcePath string, offset, limit int) ([]index.TranscriptMessage, int, error)
-	around    func(ctx context.Context, sourcePath string, seq, before, after int) ([]index.TranscriptMessage, int, int, error)
-	inSession func(ctx context.Context, sourcePath, query string) ([]int, error)
-	content   func(ctx context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error)
-	caps      map[model.Provider]model.Capability
-	copier    clipboard.Copier
-	settings  settingsStore
-	rescan    func(ctx context.Context) ([]index.SessionRow, []string, error)
+	scanProgress      func() scan.Progress
+	cancelInitialScan func()
+	cancelRescan      func()
+	overview          overviewFunc
+	page              func(ctx context.Context, sourcePath string, offset, limit int) ([]index.TranscriptMessage, int, error)
+	around            func(ctx context.Context, sourcePath string, seq, before, after int) ([]index.TranscriptMessage, int, int, error)
+	inSession         func(ctx context.Context, sourcePath, query string) ([]int, error)
+	content           func(ctx context.Context, query string, paths []string, limit int) ([]index.ContentGroup, error)
+	caps              map[model.Provider]model.Capability
+	copier            clipboard.Copier
+	settings          settingsStore
+	rescan            func(ctx context.Context) ([]index.SessionRow, []string, error)
 }
 
 type appModel struct {
-	ctx        context.Context
-	deps       dataDeps
-	transcript *transcriptState
-	search     *searchState
-	settings   *settingsState
+	chooseIndexingScope bool
+	scopeCursor         int
+	scopeError          string
+	initialIndexing     bool
+	initialScanID       int
+	initialCanceling    bool
+	scanFinished        bool
+	initialStarted      time.Time
+	initialFrame        int
+	initialProgress     scan.Progress
+	ctx                 context.Context
+	deps                dataDeps
+	transcript          *transcriptState
+	search              *searchState
+	settings            *settingsState
 
 	applyNextScan bool
 	scanSeq       int
@@ -153,6 +167,15 @@ func newModel(ctx context.Context, deps dataDeps, scanCmd tea.Cmd, launchDir, ho
 	if store, ok := deps.settings.(themeStore); ok {
 		m.themeName = store.Theme()
 	}
+	m.initialIndexing = len(sessions) == 0 && scanCmd != nil
+	if store, ok := deps.settings.(indexingScopeStore); ok && m.initialIndexing {
+		if _, set := store.IndexingDays(); !set {
+			m.chooseIndexingScope = true
+			m.initialIndexing = false
+			m.scopeCursor = 1
+		}
+	}
+	m.initialStarted = m.now()
 	m.partialCount = countPartial(sessions)
 	m.chooseAutomaticWindow()
 	m.refreshDetail()
@@ -169,7 +192,12 @@ func countPartial(sessions []index.SessionRow) int {
 	return n
 }
 
-func (m *appModel) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, m.scanCmd) }
+func (m *appModel) Init() tea.Cmd {
+	if m.chooseIndexingScope {
+		return tea.RequestBackgroundColor
+	}
+	return tea.Batch(tea.RequestBackgroundColor, m.scanCmd, m.initialTick())
+}
 
 // providerLabel renders the supporting provider name.
 func providerLabel(p model.Provider) string {

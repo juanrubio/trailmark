@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,18 @@ type Deps struct {
 // Run loads the cached session list, starts the interactive program,
 // and refreshes in the background without blocking the first paint.
 func Run(ctx context.Context, deps Deps) error {
+	ctx, stop := context.WithCancel(ctx)
+	runtime := &scanRuntime{}
+	initialCtx, cancelInitial := context.WithCancel(ctx)
+	defer cancelInitial()
+	previousObserver := deps.Scanner.Observer
+	deps.Scanner.Observer = func(p scan.Progress) {
+		runtime.setProgress(p)
+		if previousObserver != nil {
+			previousObserver(p)
+		}
+	}
+	defer func() { runtime.close(stop); deps.Scanner.Observer = previousObserver }()
 	load := func(ctx context.Context) ([]index.SessionRow, error) {
 		return deps.Index.ListSessions(ctx, 100000)
 	}
@@ -38,30 +51,37 @@ func Run(ctx context.Context, deps Deps) error {
 	home, _ := os.UserHomeDir()
 	launchDir, _ := os.Getwd()
 
-	rescan := func(ctx context.Context) ([]index.SessionRow, []string, error) {
-		stats, err := deps.Scanner.Scan(ctx)
-		if err != nil {
-			return nil, nil, err
+	scanAndLoad := func(scanCtx, loadCtx context.Context) ([]index.SessionRow, []string, error) {
+		if !runtime.start() {
+			return nil, nil, context.Canceled
 		}
-		fresh, err := load(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		return fresh, stats.FailedRoots, nil
+		defer runtime.finish()
+		stats, scanErr := deps.Scanner.Scan(scanCtx)
+		fresh, loadErr := load(loadCtx)
+		return fresh, stats.FailedRoots, errors.Join(scanErr, loadErr)
+	}
+	rescan := func(rescanCtx context.Context) ([]index.SessionRow, []string, error) {
+		child, finish := runtime.rescanContext(rescanCtx)
+		defer finish()
+		child, cancel := context.WithCancel(child)
+		defer cancel()
+		detach := context.AfterFunc(ctx, cancel)
+		defer detach()
+		return scanAndLoad(child, ctx)
 	}
 	scanCmd := func() tea.Msg {
-		fresh, failed, err := rescan(ctx)
-		if err != nil {
-			return scanDoneMsg{err: err}
-		}
-		return scanDoneMsg{sessions: fresh, failedRoots: failed}
+		fresh, failed, err := scanAndLoad(initialCtx, ctx)
+		return scanDoneMsg{sessions: fresh, failedRoots: failed, err: err}
 	}
 	d := dataDeps{
-		overview:  deps.Index.Overview,
-		page:      deps.Index.TranscriptPage,
-		around:    deps.Index.TranscriptAround,
-		inSession: deps.Index.SearchInSession,
-		content:   deps.Index.SearchContentScoped,
+		scanProgress:      runtime.progress,
+		cancelInitialScan: cancelInitial,
+		cancelRescan:      runtime.cancelRescans,
+		overview:          deps.Index.Overview,
+		page:              deps.Index.TranscriptPage,
+		around:            deps.Index.TranscriptAround,
+		inSession:         deps.Index.SearchInSession,
+		content:           deps.Index.SearchContentScoped,
 		caps: map[model.Provider]model.Capability{
 			model.ProviderClaudeCode: claudecode.Adapter{}.Capability(),
 			model.ProviderCodex:      codex.Adapter{}.Capability(),
@@ -123,6 +143,7 @@ func (b *settingsBackend) Status(ctx context.Context) (SettingsStatus, error) {
 	st := SettingsStatus{Indexed: counts.Sessions, Partial: counts.Partial}
 	if stats, ok, err := b.scanner.LastScanStats(ctx); err == nil && ok {
 		st.Excluded = stats.Excluded
+		st.Deferred = stats.Deferred
 	}
 	if raw, ok, err := b.ix.GetMeta(ctx, "last_scan_ok"); err == nil && ok && raw != "" {
 		st.LastScan = raw
@@ -304,4 +325,17 @@ func databaseFileSize(path string) (int64, bool) {
 		total += info.Size()
 	}
 	return total, true
+}
+
+func (b *settingsBackend) IndexingDays() (int, bool) {
+	if b.cfg == nil {
+		return 0, false
+	}
+	return b.cfg.IndexingScope()
+}
+func (b *settingsBackend) SetIndexingDays(days int) error {
+	if b.cfg == nil {
+		return fmt.Errorf("configuration unavailable")
+	}
+	return b.cfg.SetIndexingScope(days)
 }

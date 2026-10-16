@@ -21,6 +21,7 @@ def seed(root):
     claude_root.mkdir(parents=True)
     (config_dir / "config.json").write_text(json.dumps({
         "theme": "green",
+        "indexing_days": 0,
         "disable_default_roots": True,
         "roots": [
             {"provider": "codex", "path": str(codex_root)},
