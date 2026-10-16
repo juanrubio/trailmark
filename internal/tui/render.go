@@ -409,7 +409,7 @@ func (m *appModel) viewHelp(w, h int) string {
 		"R            Apply refreshed session ordering",
 		"t            Transcript at the latest exchange",
 		"T            Transcript at the initial request",
-		"J / K        Scroll transcript down / up",
+		"J / K        Scroll transcript one rendered line down / up",
 		"PgUp/PgDown  Page transcript or overview",
 		"s            Search session content",
 		"r / f / n    Resume, fork, clean session",

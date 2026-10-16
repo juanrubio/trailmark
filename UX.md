@@ -176,7 +176,7 @@ Show only relevant keys in each view, with full help available through `?`. A fo
 | Key | Recent list / overview | Transcript / content-search results |
 | --- | --- | --- |
 | Arrows or `j`/`k` | Move selection; scroll when overview has focus. | Select a transcript message or search result. |
-| `J` / `K` | No action in the session list. | Scroll transcript text down/up within the loaded messages. |
+| `J` / `K` | No action in the session list. | Scroll transcript text down/up by one rendered line. |
 | Page Down / Page Up | Page the focused overview. | Page transcript text down/up across the full session. |
 | Enter | Focus/open selected overview. | Open the selected search result at its matching passage. |
 | Tab / Shift-Tab | Move between visible focusable panes/controls. | Move between available controls. |
@@ -207,7 +207,7 @@ their back/close behavior; Ctrl+C remains an immediate exit.
 
 ## 7. Secondary transcript reading and search
 
-Transcript reading is one explicit action away from a session. Show readable roles, timestamps where present, wrapped text, and collapsed tool activity. Wrap prose at word boundaries within the inner frame, preserving source line breaks and indentation; split overlong tokens when necessary. Copy actions retain the original text. Preserve session purpose and directory in the view header. Allow opening an overview excerpt at its source message.
+Transcript reading is one explicit action away from a session. Arrows and `j`/`k` select messages; `J`/`K` scroll the text one rendered line at a time, while Page Down/Up scroll by a viewport. Show readable roles, timestamps where present, wrapped text, and collapsed tool activity. Wrap prose at word boundaries within the inner frame, preserving source line breaks and indentation; split overlong tokens when necessary. Copy actions retain the original text. Preserve session purpose and directory in the view header. Allow opening an overview excerpt at its source message.
 
 `/` in the transcript searches that session, shows a match count, and highlights results. `[` and `]` move through matches. Reveal a matching tool output even when tools are normally collapsed.
 
@@ -219,7 +219,7 @@ must not accumulate hidden movement: the first key in the opposite
 direction moves immediately when more content exists. Resizing and
 expanding/collapsing content must retain valid scroll bounds. A search
 or next/previous-match jump must reveal its target without retaining an
-unrelated text-scroll offset. Page Up/Down must load adjacent transcript pages in either direction, including previously evicted messages, so the loading boundary never becomes a scrolling endpoint.
+unrelated text-scroll offset. Both line scrolling and Page Up/Down load adjacent transcript pages in either direction, including previously evicted messages, so the loading boundary never becomes a scrolling endpoint.
 
 The home-screen `/` filter remains a lightweight way to narrow recognizable cards. It must not unexpectedly replace the day-grouped overview with relevance-ranked transcript results.
 

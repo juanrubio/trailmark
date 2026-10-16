@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/juanrubio/trailmark/internal/index"
 )
@@ -30,7 +31,7 @@ func TestTranscriptScrollBoundariesAndResize(t *testing.T) {
 	if view() == start {
 		t.Fatal("first J at first message did not scroll")
 	}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 200; i++ {
 		send(m, "J")
 	}
 	bottom := view()
@@ -38,7 +39,7 @@ func TestTranscriptScrollBoundariesAndResize(t *testing.T) {
 	if view() == bottom {
 		t.Fatal("K after overscrolling bottom did not immediately move")
 	}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 200; i++ {
 		send(m, "K")
 	}
 	top := view()
@@ -52,7 +53,7 @@ func TestTranscriptScrollBoundariesAndResize(t *testing.T) {
 	if view() == page {
 		t.Fatal("page up did not move")
 	}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 200; i++ {
 		send(m, "J")
 	}
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 50})
@@ -158,5 +159,81 @@ func TestTranscriptPageKeysCrossLoadedWindows(t *testing.T) {
 	}
 	if m.transcript.offset != 0 || !strings.Contains(ansi.Strip(m.View().Content), "message 0001") {
 		t.Fatal("page up did not reload evicted history")
+	}
+}
+
+func TestTranscriptLineKeysMoveExactlyOneRenderedLine(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 80, 24
+	c, _ := m.selected()
+	m.transcript = &transcriptState{row: c.row, msgs: []index.TranscriptMessage{{Seq: 1, Kind: "message", Role: "user", Text: scrollText()}, {Seq: 2, Kind: "message", Role: "assistant", Text: "second selected block"}}, total: 2, expanded: map[int]bool{}}
+	body := func() []string {
+		_, _, _, y := m.viewport()
+		w, h, _, _ := m.viewport()
+		rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+		return rows[y+3 : y+3+m.transcriptBodyHeight(m.transcript, w, h)]
+	}
+	before := append([]string(nil), body()...)
+	send(m, "J")
+	after := body()
+	if after[0] != before[1] || m.transcript.cursor != 0 {
+		t.Fatal("J did not move exactly one rendered line while preserving selected block")
+	}
+	send(m, "K")
+	if strings.Join(body(), "\n") != strings.Join(before, "\n") || m.transcript.cursor != 0 {
+		t.Fatal("K did not reverse exactly one rendered line")
+	}
+	w, h, _, _ := m.viewport()
+	height := m.transcriptBodyHeight(m.transcript, w, h)
+	lines, _ := m.transcriptLines(m.transcript, w)
+	m.onKey(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	_, _, x, _ := m.viewport()
+	if body()[0] != strings.Repeat(" ", x)+ansi.Strip(lines[height])+strings.Repeat(" ", w-lipgloss.Width(lines[height])+x) {
+		t.Fatal("PageDown no longer moves one viewport")
+	}
+	m.onKey(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if body()[0] != before[0] {
+		t.Fatal("PageUp did not reverse viewport movement")
+	}
+	m.onKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	if m.transcript.cursor != 1 {
+		t.Fatal("arrow no longer selects blocks")
+	}
+	send(m, "k")
+	if m.transcript.cursor != 0 {
+		t.Fatal("k no longer selects blocks")
+	}
+	send(m, "j")
+	if m.transcript.cursor != 1 {
+		t.Fatal("j no longer selects blocks")
+	}
+}
+
+func TestTranscriptLineKeysCrossLoadedBoundary(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 80, 24
+	msgs := make([]index.TranscriptMessage, 8)
+	for i := range msgs {
+		msgs[i] = index.TranscriptMessage{Seq: i + 1, Kind: "message", Role: "user", Text: fmt.Sprintf("block %d", i+1)}
+	}
+	m.deps.page = func(_ context.Context, _ string, offset, limit int) ([]index.TranscriptMessage, int, error) {
+		return append([]index.TranscriptMessage(nil), msgs[offset:min(len(msgs), offset+limit)]...), len(msgs), nil
+	}
+	c, _ := m.selected()
+	m.transcript = &transcriptState{row: c.row, msgs: append([]index.TranscriptMessage(nil), msgs[:2]...), total: len(msgs), expanded: map[int]bool{}}
+	send(m, "J")
+	if len(m.transcript.msgs) != len(msgs) || m.transcript.cursor != 0 || m.transcript.lineScroll != 1 {
+		t.Fatal("line-down did not load next page and move one line")
+	}
+	m.transcript.msgs = append([]index.TranscriptMessage(nil), msgs[4:]...)
+	m.transcript.offset = 4
+	m.transcript.cursor = 0
+	m.transcript.lineScroll = 0
+	m.View()
+	before, _ := m.transcript.current()
+	send(m, "K")
+	after, _ := m.transcript.current()
+	if m.transcript.offset != 0 || before.Seq != after.Seq {
+		t.Fatal("line-up failed to load history while retaining selected block")
 	}
 }

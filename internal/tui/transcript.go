@@ -194,14 +194,14 @@ func (m *appModel) onTranscriptKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "J", "K", "pgdown", "pgup":
 		w, h, _, _ := m.viewport()
 		m.viewTranscript(w, h) // normalize before applying a relative move
-		step := 10
+		step := 1
 		if s == "pgdown" || s == "pgup" {
 			step = m.transcriptBodyHeight(t, w, h)
 		}
 		if s == "K" || s == "pgup" {
 			step = -step
 		}
-		m.scrollTranscript(step, s == "pgdown" || s == "pgup")
+		m.scrollTranscript(step, true)
 	case "/":
 		t.searchPrev = t.query
 		t.searching = true
@@ -374,7 +374,7 @@ func (m *appModel) transcriptFooter(t *transcriptState) string {
 	if t.searching {
 		return m.styles().path.Render("Search this session: "+t.query+"_  (") + m.shortcutHints(" · ", "Enter", "search", "Esc", "cancel") + m.styles().path.Render(")")
 	}
-	parts := []string{m.shortcutHints("  ", "↑↓/jk", "Select", "J/K", "Scroll", "PgUp/PgDown", "Page"), m.shortcutHints("  ", "/", "Search", "[ ]", "Matches", "e", "Expand tools", "Enter", "Toggle", "c", "Copy", "Esc", "Back")}
+	parts := []string{m.shortcutHints("  ", "↑↓/jk", "Select", "J/K", "Scroll line", "PgUp/PgDown", "Page"), m.shortcutHints("  ", "/", "Search", "[ ]", "Matches", "e", "Expand tools", "Enter", "Toggle", "c", "Copy", "Esc", "Back")}
 	if t.status != "" {
 		parts = append([]string{m.styles().path.Render(t.status)}, parts...)
 	}

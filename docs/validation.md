@@ -206,3 +206,16 @@ measurements, unit formatting, and the displayed value. A temporary SQLite
 integration test checks that measurement uses the actual opened database
 even when the configured data directory differs, and that reloading
 settings refreshes availability. `make check build` passed.
+
+
+### Single-line transcript scrolling
+
+`J`/`K` now moves one rendered line instead of ten; arrows and `j`/`k`
+still select messages, and Page Down/Up retains viewport-sized movement.
+Tests compare the visible first row before/after a line step and its
+reverse, check selection remains stable, and verify page-sized movement
+and message selection separately. Line scrolling also loads adjacent
+message pages in both directions. Edge tests exercise enough repeated
+one-line movement to reach both ends and confirm immediate reversal.
+Footer/help and the keyboard specification describe the three actions.
+`make check build` passed; the binary was rebuilt.
