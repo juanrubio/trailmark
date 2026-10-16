@@ -213,6 +213,14 @@ or Esc cancels. Repeated `q` must not bypass confirmation. Cancelling
 preserves selection, filters, and reading position. Nested views retain
 their back/close behavior; Ctrl+C remains an immediate exit.
 
+Give the quit modal a raised surface, a theme-accent border and bold title,
+and a short explanatory line. Use padded, clearly separated Cancel and Quit
+buttons: the selected Cancel uses an accent fill and the selected Quit uses
+the warning color, both with contrasting text. Retain a visible selection
+marker in no-color mode. Separate the keyboard hints from the actions with
+a rule, and keep the title, both buttons and complete hints readable down
+to 40×12. This styling is specific to the quit confirmation.
+
 ## 7. Secondary transcript reading and search
 
 Transcript reading is one explicit action away from a session. Arrows and `j`/`k` select messages; `J`/`K` scroll the text one rendered line at a time, while Page Down/Up scroll by a viewport. Show readable roles, timestamps where present, wrapped text, and collapsed tool activity. Wrap prose at word boundaries within the inner frame, preserving source line breaks and indentation; split overlong tokens when necessary. Copy actions retain the original text. Preserve session purpose and directory in the view header. Allow opening an overview excerpt at its source message.

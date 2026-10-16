@@ -19,8 +19,8 @@ func (m *appModel) View() tea.View {
 	case tw < 40 || th < 12:
 		content = "Terminal too small for Trailmark.\nResize to at least 40x12 · q quit"
 	case m.overlay == overlayQuit:
-		pw, ph := min(w, 48), min(h, 9)
-		content = lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, m.panel(m.viewQuit(pw-4), pw, ph))
+		pw, ph := min(w, 50), min(h, 11)
+		content = lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, m.viewQuitModal(pw, ph))
 	case m.overlay == overlayHelp:
 		content = m.viewHelp(w, h)
 	case m.overlay == overlaySelector:
@@ -647,15 +647,75 @@ func wrapPreserve(s string, w int) []string {
 	return out
 }
 
-func (m *appModel) viewQuit(w int) string {
-	st := m.styles()
-	cancel, quit := "[ Cancel ]", "[ Quit ]"
-	if m.quitSelected {
-		quit = m.paintBackground(st.selected.Render(quit), true)
-	} else {
-		cancel = m.paintBackground(st.selected.Render(cancel), true)
+// viewQuitModal has its own raised surface and accent border so confirmation
+// remains distinct from the surrounding session browser.
+func (m *appModel) viewQuitModal(w, h int) string {
+	p, st := m.palette(), m.styles()
+	button := func(label string, focused, warning bool) string {
+		marker := "  "
+		if focused {
+			marker = "> "
+		}
+		style := lipgloss.NewStyle().Padding(0, 1)
+		if focused {
+			style = style.Bold(true)
+		}
+		if !m.noColor {
+			style = style.Foreground(lipgloss.Color(p.text)).Background(lipgloss.Color(p.selection))
+			if focused {
+				fill := p.accent
+				if warning {
+					fill = p.warning
+				}
+				ink := "#000000"
+				if m.lightTheme {
+					ink = "#ffffff"
+				}
+				style = style.Foreground(lipgloss.Color(ink)).Background(lipgloss.Color(fill))
+			}
+		}
+		return style.Render("[" + marker + label + "]")
 	}
-	return st.heading.Render("Quit Trailmark?") + "\n\n" + cancel + "   " + quit + "\n\n" + truncate("←/→ Choose · Enter Confirm · Esc Cancel", w)
+	innerW := max(1, w-4)
+	title := st.accent.Bold(true).Render("Quit Trailmark?")
+	rule := st.accent.Render(strings.Repeat(m.horizontalRule(), innerW))
+	choose := "←/→ or Tab Choose"
+	if m.ascii {
+		choose = "Left/Right or Tab Choose"
+	}
+	lines := []string{
+		title,
+		"Leave the session browser?",
+		"",
+		button("Cancel", !m.quitSelected, false) + "   " + button("Quit", m.quitSelected, true),
+		"",
+		rule,
+		st.muted.Render(choose),
+		st.muted.Render("Enter Confirm · Esc Cancel"),
+	}
+	if m.ascii {
+		lines[len(lines)-1] = st.muted.Render("Enter Confirm | Esc Cancel")
+	}
+	border := lipgloss.RoundedBorder()
+	if m.ascii {
+		border = lipgloss.ASCIIBorder()
+	}
+	card := lipgloss.NewStyle().Border(border).Padding(0, 1)
+	if !m.noColor {
+		card = card.Foreground(lipgloss.Color(p.text)).Background(lipgloss.Color(p.raised)).BorderForeground(lipgloss.Color(p.accent)).BorderBackground(lipgloss.Color(p.raised))
+	}
+	content := card.Render(fitPane(strings.Join(lines, "\n"), innerW, max(1, h-2)))
+	if !m.noColor {
+		content = m.restoreSurface(content, p.raised)
+		// End each card row before Place adds surrounding padding. The outer
+		// frame restores the base surface after these resets.
+		rows := strings.Split(content, "\n")
+		for i := range rows {
+			rows[i] += "\x1b[0m"
+		}
+		content = strings.Join(rows, "\n")
+	}
+	return content
 }
 
 func (m *appModel) terminalSize() (int, int) {

@@ -267,3 +267,19 @@ Synthetic ANSI previews of the Overview and recorded work were generated
 for both variants; the black and white 80×24 views were visually inspected.
 Physical-terminal color fidelity remains unverified. `make check build`
 passed and rebuilt `./trailmark`.
+
+### Quit-modal visual refinement
+
+The quit confirmation now uses a raised surface, accent border/title,
+padded buttons, and a contrasting accent or warning fill for the focused
+choice. Cancel remains the default. Existing confirmation/cancellation
+behavior tests pass, and controls remain readable with an explicit focus
+marker across all four themes, dark/light and no-color/ASCII modes at
+40×12 and 80×24. An ANSI-cell regression verifies that the raised surface
+ends at the card and does not color the surrounding frame padding.
+
+Synthetic previews cover both focused choices and all four themes in
+light/dark modes. Final dark Monokai and compact light Green captures were
+visually inspected after correcting a background spill discovered in the
+first preview. Physical-terminal rendering remains unverified.
+`make check build` passed and rebuilt `./trailmark`.
