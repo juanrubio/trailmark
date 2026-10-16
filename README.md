@@ -4,6 +4,10 @@ A local, keyboard-first TUI for remembering recent coding-agent work and decidin
 
 See what you worked on over the last few days, recognize each session's purpose and project path, and decide whether to resume it, fork it, or start a clean session in that area.
 
+![Trailmark in action: browsing recent coding sessions, filtering by harness, searching a transcript, and preparing a resume command](docs/media/showcase.gif)
+
+*Recorded from the application using fictional sessions. [Recreate the demo](tapes/README.md).*
+
 **Status:** MVP implemented (Phases 1–5) — recent-work overview, continuation preparation and copying, transcript reading, content search, and sources/settings with the full derived-data lifecycle. Performance measurements are in [docs/benchmarks.md](docs/benchmarks.md) and scripted validation in [docs/validation.md](docs/validation.md). The project name has not been cleared.
 
 ## Core workflows
@@ -45,6 +49,8 @@ Go, using the Charm TUI stack described in the PRD: Bubble Tea v2, Bubbles, and 
 ## Development
 
 `make check` runs vet and tests; `make build` builds `./trailmark`. Provider contracts are recorded in [docs/providers.md](docs/providers.md), and configuration and data locations in [docs/configuration.md](docs/configuration.md).
+
+The README animation is recorded with [VHS](https://github.com/charmbracelet/vhs). Its [tape and fixture generator](tapes/README.md) run the normal application in an isolated temporary workspace.
 
 ## License
 

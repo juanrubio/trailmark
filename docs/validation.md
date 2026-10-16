@@ -283,3 +283,24 @@ light/dark modes. Final dark Monokai and compact light Green captures were
 visually inspected after correcting a background spill discovered in the
 first preview. Physical-terminal rendering remains unverified.
 `make check build` passed and rebuilt `./trailmark`.
+
+### README animation
+
+Recorded `docs/media/showcase.gif` from the normal application with VHS
+0.10.0 and the reproducible wrapper in `tapes/record-showcase.sh`. The
+wrapper builds a temporary binary and supplies six fictional native sessions
+through isolated HOME, config, data, and explicitly configured source roots.
+No production application code or launch flags were changed.
+
+The recording shows recent-session selection, Claude Code filtering (three
+of six sessions), transcript search with a highlighted match, a prepared
+resume command, and quit cancellation. Extracted frames were visually
+inspected at the opening, filter, search, continuation, and quit states and
+at the final return to the overview. The GIF loops at 1440×900 pixels for
+26.28 seconds and is approximately 2.8 MiB. Its content is synthetic; no
+agent or prepared command was executed.
+
+The wrapper completed successfully, including the application build and
+VHS tape validation. Shell/Python syntax, README local links, GIF decoding,
+and `git diff --check` passed. This media check does not replace physical
+terminal acceptance or provider-compatibility tests.
